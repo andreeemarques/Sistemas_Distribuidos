@@ -39,11 +39,10 @@ class Gateway
 
     static string ReceiveMessage(NetworkStream stream)
     {
-        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, false, 1024, true))
-        {
-            string message = reader.ReadLine();
-            return message;
-        }
+        byte[] buffer = new byte[1024];
+        int bytesRead = stream.Read(buffer, 0, buffer.Length);
+        string resposta = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        return resposta;
     }
 
     static void HandleClient(TcpClient client)
