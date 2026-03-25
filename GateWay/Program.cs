@@ -59,9 +59,6 @@ class Gateway
             {
                 string message = ReceiveMessage(stream);
 
-                // Se for null, significa que o cliente desligou
-                if (message == null) break;
-
                 Console.WriteLine("Recebido: " + message);
 
 
@@ -82,7 +79,7 @@ class Gateway
                 }
 
                 // Tipos de dados (TEMP;HUM;RUIDO)
-                else if (message.Contains(";") && !message.StartsWith("HEARTBEAT"))
+                else if (message.Contains(";") && !message.StartsWith("HEARTBEAT") && !message.StartsWith("2"))
                 {
                     // Aqui assumimos que é a lista de tipos de dados
                     SendResponse(stream, "TYPES_OK");
@@ -122,6 +119,7 @@ class Gateway
                 else
                 {
                     SendResponse(stream, "ERROR:UNKNOWN_COMMAND");
+                    break;
                 }
             }
         }
