@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
@@ -11,8 +12,17 @@ namespace Sensor
     {
         static void Main(string[] args)
         {
+            TcpClient client = new TcpClient("127.0.0.1", 5000);
+            var stream = client.GetStream();
+
             Console.Write("ID do Sensor: ");
             string id = Console.ReadLine();
+
+            byte[] buffer_msg = new byte[1024];
+            int bytesRead_msg = stream.Read(buffer_msg, 0, buffer_msg.Length);
+
+            string resposta1 = Encoding.UTF8.GetString(buffer_msg, 0, bytesRead_msg);
+            Console.WriteLine("Gateway respondeu: " + resposta1);
 
             while (true)
             {
@@ -43,9 +53,6 @@ namespace Sensor
                         msg = "DISCONNECT";
                         break;
                 }
-
-                TcpClient client = new TcpClient("127.0.0.1", 5000);
-                var stream = client.GetStream();
 
                 byte[] data = Encoding.UTF8.GetBytes(msg);
                 stream.Write(data, 0, data.Length);
