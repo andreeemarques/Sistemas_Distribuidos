@@ -6,6 +6,8 @@ using System.Text;
 
 class Gateway
 {
+
+
     static void Main()
     {
         int port = 5000;
@@ -28,16 +30,26 @@ class Gateway
         }
     }
 
+    static void SendResponse(NetworkStream stream, string message)
+    {
+        string resposta = message + "\n"; // IMPORTANTE
+        byte[] resp = Encoding.UTF8.GetBytes(resposta);
+        stream.Write(resp, 0, resp.Length);
+    }
+
+    static string ReceiveMessage(NetworkStream stream)
+    {
+        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, false, 1024, true))
+        {
+            string message = reader.ReadLine();
+            return message;
+        }
+    }
+
     static void HandleClient(TcpClient client)
     {
         // Stream de comunicação com o cliente
         NetworkStream stream = client.GetStream();
-
-        // Leitura de mensagens (input)
-        StreamReader reader = new StreamReader(stream);
-
-        // Escrita de mensagens (output)
-        StreamWriter writer = new StreamWriter(stream) { AutoFlush = true };
 
         string sensorId = "";
 
@@ -46,7 +58,7 @@ class Gateway
             // Loop para ler mensagens continuamente
             while (true)
             {
-                string message = reader.ReadLine();
+                string message = ReceiveMessage(stream);
 
                 // Se for null, significa que o cliente desligou
                 if (message == null) break;
@@ -67,14 +79,14 @@ class Gateway
                     Console.WriteLine("Sensor ID: " + sensorId);
 
                     // Responde ao sensor
-                    writer.WriteLine("OK");
+                    SendResponse(stream, "OK");
                 }
 
                 // Tipos de dados (TEMP;HUM;RUIDO)
                 else if (message.Contains(";") && !message.StartsWith("HEARTBEAT"))
                 {
                     // Aqui assumimos que é a lista de tipos de dados
-                    writer.WriteLine("TYPES_OK");
+                    SendResponse(stream, "TYPES_OK");
                 }
 
                 // Dados ambientais
@@ -84,7 +96,7 @@ class Gateway
                     Console.WriteLine("Dados recebidos: " + message);
 
                     // Confirma receção ao sensor
-                    writer.WriteLine("DATA_RECEIVED");
+                    SendResponse(stream, "DATA_RECEIVED");
 
                     // Encaminha os dados para o servidor
                     SendToServer(message);
@@ -97,20 +109,20 @@ class Gateway
                     Console.WriteLine("Heartbeat de " + message);
 
                     // Resposta opcional
-                    writer.WriteLine("HEARTBEAT_OK");
+                    SendResponse(stream, "HEARTBEAT_OK");
                 }
 
                 // DISCONNECT
                 else if (message == "DISCONNECT")
                 {
-                    writer.WriteLine("BYE");
+                    SendResponse(stream, "BYE");
                     break; // sai do ciclo
                 }
 
                 // Mensagem desconhecida
                 else
                 {
-                    writer.WriteLine("ERROR:UNKNOWN_COMMAND");
+                    SendResponse(stream, "ERROR:UNKNOWN_COMMAND");
                 }
             }
         }
@@ -133,14 +145,11 @@ class Gateway
 
             NetworkStream stream = serverClient.GetStream();
 
-            StreamWriter writer = new StreamWriter(stream) { AutoFlush = true };
-            StreamReader reader = new StreamReader(stream);
-
             // Envia os dados recebidos do sensor
-            writer.WriteLine(data);
+            SendResponse(stream, data);
 
             // Espera resposta do servidor
-            string response = reader.ReadLine();
+            string response = ReceiveMessage(stream);
 
             Console.WriteLine("Servidor respondeu: " + response);
 
