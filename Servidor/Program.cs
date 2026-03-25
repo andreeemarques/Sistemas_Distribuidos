@@ -1,15 +1,32 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
-using System.Threading.Tasks;
 
-namespace Servidor
+class Servidor
 {
-    internal class Program
+    static void Main()
     {
-        static void Main(string[] args)
+        TcpListener server = new TcpListener(IPAddress.Any, 6000);
+        server.Start();
+        Console.WriteLine("Servidor iniciado...");
+
+        while (true)
         {
+            var client = server.AcceptTcpClient();  
+            var stream = client.GetStream();
+
+            byte[] buffer = new byte[1024];
+            int bytesRead = stream.Read(buffer, 0, buffer.Length);
+
+            string data = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+            Console.WriteLine("Recebido: " + data);
+
+            string resposta = "DATA_STORED";
+            byte[] resp = Encoding.UTF8.GetBytes(resposta);
+            stream.Write(resp, 0, resp.Length);
+
+            client.Close();
         }
     }
 }
