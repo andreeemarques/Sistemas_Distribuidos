@@ -32,7 +32,7 @@ class Gateway
 
     static void SendResponse(NetworkStream stream, string message)
     {
-        string resposta = message + "\n"; // IMPORTANTE
+        string resposta = message + "\n";
         byte[] resp = Encoding.UTF8.GetBytes(resposta);
         stream.Write(resp, 0, resp.Length);
     }
@@ -43,6 +43,58 @@ class Gateway
         int bytesRead = stream.Read(buffer, 0, buffer.Length);
         string resposta = Encoding.UTF8.GetString(buffer, 0, bytesRead);
         return resposta;
+    }
+
+    static void SaveData(string message)
+    {
+        string[] parts = message.Split(';');
+
+        string tipo = parts[3]; // TEMP, HUM, etc.
+
+        string path = $"Data/{tipo}.txt";
+
+        //Directory.CreateDirectory("data");
+
+        File.AppendAllText(path, message + Environment.NewLine);
+    }
+
+    static bool SensorExists(string sensorId)
+    {
+        string path = "Data/sensores.csv";
+
+        if (!File.Exists(path)) return false;
+
+        var lines = File.ReadAllLines(path);
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith(sensorId + ";"))
+                return true;
+        }
+
+        return false;
+    }
+
+    static void UpdateSensor(string sensorId)
+    {
+        string path = "Data/sensores.csv";
+
+        if (!File.Exists(path)) return;
+
+        var lines = File.ReadAllLines(path);
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var parts = lines[i].Split(';');
+
+            if (parts[0] == sensorId)
+            {
+                parts[4] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                lines[i] = string.Join(";", parts);
+            }
+        }
+
+        File.WriteAllLines(path, lines);
     }
 
     static void HandleClient(TcpClient client)
@@ -72,6 +124,12 @@ class Gateway
                     // Guarda o ID do sensor
                     sensorId = parts[1];
 
+                    if (!SensorExists(sensorId))
+                    {
+                        SendResponse(stream, "ERROR:SENSOR_NOT_REGISTERED");
+                        continue;
+                    }
+
                     Console.WriteLine("Sensor ID: " + sensorId);
 
                     // Responde ao sensor
@@ -91,10 +149,10 @@ class Gateway
                 {
                     Console.WriteLine("Dados recebidos: " + message);
 
-                    // Confirma receção ao sensor
-                    SendResponse(stream, "DATA_RECEIVED");
+                    SaveData(message);
+                    UpdateSensor(sensorId);
 
-                    // Encaminha os dados para o servidor
+                    SendResponse(stream, "DATA_RECEIVED");
                     SendToServer(message);
                 }
 
@@ -103,6 +161,8 @@ class Gateway
                 else if (message.StartsWith("HEARTBEAT"))
                 {
                     Console.WriteLine("Heartbeat de " + message);
+
+                    UpdateSensor(sensorId);
 
                     // Resposta opcional
                     SendResponse(stream, "HEARTBEAT_OK");
