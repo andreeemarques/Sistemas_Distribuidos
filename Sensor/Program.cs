@@ -128,14 +128,6 @@ namespace Sensor
                             break;
                         }
                     }
-
-                    if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 2.3)
-                    {
-                        Send(stream, $"HEARTBEAT;{id}");
-                        Console.WriteLine("Heartbeat -> " + Receive(stream));
-
-                        ultimoHeartbeat = DateTime.Now;
-                    }
                 }
 
                 Thread.Sleep(60000);
