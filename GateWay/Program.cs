@@ -10,7 +10,6 @@ class Gateway
 {
     // ── Configurações ──────────────────────────────────────────
     const int PORT = 5000;
-    const int MAX_SENSORS = 5;          // limite de sensores ligados
     const int CLIENT_TIMEOUT_MS = 30_000;     // 30s sem mensagem → desliga
     const int MSG_INTERVAL_MS = 2_000;      // intervalo mínimo entre mensagens
     const int QUEUE_FLUSH_SEC = 60;         // envia fila a cada 60s
@@ -19,10 +18,6 @@ class Gateway
     // Um mutex por ficheiro para garantir acesso sequencial
     static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
     static Mutex dictMutex = new Mutex(); // protege o próprio dicionário
-
-    // ── Controlo de sensores ───────────────────────────────────
-    static int activeSensors = 0;
-    static Mutex sensorCountMutex = new Mutex();
 
     // ── Fila de ficheiros a enviar ─────────────────────────────
     static Queue<string> fileQueue = new Queue<string>();
@@ -57,23 +52,7 @@ class Gateway
         // Loop infinito para aceitar vários sensores
         while (true)
         {
-            // Verifica limite de sensores
-            sensorCountMutex.WaitOne();
-            if (activeSensors >= MAX_SENSORS)
-            {
-                sensorCountMutex.ReleaseMutex();
-                Console.WriteLine("Limite de sensores atingido. Ligação recusada.");
-
-                // Avisa o sensor e fecha
-                NetworkStream s = client.GetStream();
-                SendResponse(s, "ERROR:MAX_SENSORS_REACHED");
-                client.Close();
-                continue;
-            }
-            activeSensors++;
-            sensorCountMutex.ReleaseMutex();
-
-            Console.WriteLine($"Sensor conectado! ({activeSensors}/{MAX_SENSORS})");
+            Console.WriteLine("Sensor conectado!");
 
             // Cria uma thread por sensor — concorrência
             Thread t = new Thread(() => HandleClient(client));
@@ -277,6 +256,7 @@ class Gateway
         // Stream de comunicação com o cliente
         NetworkStream stream = client.GetStream();
         string sensorId = "";
+        int threadId = Thread.CurrentThread.ManagedThreadId;
         // Timeout: se não chegar mensagem em CLIENT_TIMEOUT_MS → excepção e desliga
         client.ReceiveTimeout = CLIENT_TIMEOUT_MS;
 
@@ -381,12 +361,7 @@ class Gateway
         {
             client.Close();
 
-            // Decrementa contador de sensores ativos
-            sensorCountMutex.WaitOne();
-            activeSensors--;
-            sensorCountMutex.ReleaseMutex();
-
-            Console.WriteLine($"[Thread {threadId}] Sensor desconectado. ({activeSensors}/{MAX_SENSORS})");
+            Console.WriteLine($"[Thread {threadId}] Sensor desconectado.");
         }
     }
 
