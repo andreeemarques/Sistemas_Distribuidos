@@ -3,31 +3,182 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
+using System.Collections.Generic;
 
 class Gateway
 {
+    // ── Configurações ──────────────────────────────────────────
+    const int PORT = 5000;
+    const int MAX_SENSORS = 5;          // limite de sensores ligados
+    const int CLIENT_TIMEOUT_MS = 30_000;     // 30s sem mensagem → desliga
+    const int MSG_INTERVAL_MS = 2_000;      // intervalo mínimo entre mensagens
+    const int QUEUE_FLUSH_SEC = 60;         // envia fila a cada 60s
 
+
+    // Um mutex por ficheiro para garantir acesso sequencial
+    static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
+    static Mutex dictMutex = new Mutex(); // protege o próprio dicionário
+
+    // ── Controlo de sensores ───────────────────────────────────
+    static int activeSensors = 0;
+    static Mutex sensorCountMutex = new Mutex();
+
+    // ── Fila de ficheiros a enviar ─────────────────────────────
+    static Queue<string> fileQueue = new Queue<string>();
+    static Mutex queueMutex = new Mutex();
+
+    // ── Rate limiting (ultimo envio por sensor) ────────────────
+    static Dictionary<string, DateTime> lastMessageTime = new Dictionary<string, DateTime>();
+    static Mutex rateMutex = new Mutex();
+
+    static Mutex GetFileMutex(string path)
+    {
+        dictMutex.WaitOne();
+        if (!fileMutexes.ContainsKey(path))
+            fileMutexes[path] = new Mutex();
+        Mutex m = fileMutexes[path];
+        dictMutex.ReleaseMutex();
+        return m;
+    }
 
     static void Main()
     {
-        int port = 5000;
+        // Thread dedicada a processar a fila de ficheiros
+        Thread queueThread = new Thread(ProcessFileQueue);
+        queueThread.IsBackground = true;
+        queueThread.Start();
 
         // Cria um servidor TCP a escutar em qualquer IP na porta definida
-        TcpListener server = new TcpListener(IPAddress.Any, port);
+        TcpListener server = new TcpListener(IPAddress.Any, PORT);
         server.Start();
-
-        Console.WriteLine("Gateway iniciado na porta " + port);
+        Console.WriteLine("Gateway iniciado na porta {PORT}");
 
         // Loop infinito para aceitar vários sensores
         while (true)
         {
-            // Espera até um sensor se conectar
-            TcpClient client = server.AcceptTcpClient();
-            Console.WriteLine("Sensor conectado!");
+            // Verifica limite de sensores
+            sensorCountMutex.WaitOne();
+            if (activeSensors >= MAX_SENSORS)
+            {
+                sensorCountMutex.ReleaseMutex();
+                Console.WriteLine("Limite de sensores atingido. Ligação recusada.");
 
-            // Trata a comunicação com esse sensor
-            HandleClient(client);
+                // Avisa o sensor e fecha
+                NetworkStream s = client.GetStream();
+                SendResponse(s, "ERROR:MAX_SENSORS_REACHED");
+                client.Close();
+                continue;
+            }
+            activeSensors++;
+            sensorCountMutex.ReleaseMutex();
+
+            Console.WriteLine($"Sensor conectado! ({activeSensors}/{MAX_SENSORS})");
+
+            // Cria uma thread por sensor — concorrência
+            Thread t = new Thread(() => HandleClient(client));
+            t.IsBackground = true;
+            t.Start();
         }
+    }
+
+    // ── Fila de ficheiros ──────────────────────────────────────
+
+    static void EnqueueFile(string path)
+    {
+        queueMutex.WaitOne();
+        if (!fileQueue.Contains(path))
+            fileQueue.Enqueue(path);
+        queueMutex.ReleaseMutex();
+    }
+
+    static void ProcessFileQueue()
+    {
+        while (true)
+        {
+            Thread.Sleep(QUEUE_FLUSH_SEC * 1000);
+
+            queueMutex.WaitOne();
+            List<string> toSend = new List<string>(fileQueue);
+            fileQueue.Clear();
+            queueMutex.ReleaseMutex();
+
+            foreach (string path in toSend)
+            {
+                if (!File.Exists(path)) continue;
+
+                Console.WriteLine($"A enviar ficheiro ao servidor: {path}");
+                bool sent = SendFileToServer(path);
+
+                if (sent)
+                {
+                    // Apaga o ficheiro depois de enviado
+                    Mutex m = GetFileMutex(path);
+                    m.WaitOne();
+                    try { File.Delete(path); Console.WriteLine($"Ficheiro apagado: {path}"); }
+                    finally { m.ReleaseMutex(); }
+                }
+                else
+                {
+                    // Falhou — volta para a fila
+                    Console.WriteLine($"Falhou envio de {path}, será reentado.");
+                    EnqueueFile(path);
+                }
+            }
+        }
+    }
+
+    static bool SendFileToServer(string path)
+    {
+        try
+        {
+            byte[] fileBytes = File.ReadAllBytes(path);
+            string fileName = Path.GetFileName(path);
+
+            TcpClient serverClient = new TcpClient("127.0.0.1", 6000);
+            NetworkStream stream = serverClient.GetStream();
+
+            // Header com nome e tamanho
+            string header = $"FILE;{fileName};{fileBytes.Length}";
+            SendResponse(stream, header);
+
+            string ack = ReceiveMessage(stream).Trim();
+            if (ack != "FILE_READY") { serverClient.Close(); return false; }
+
+            // Envia os bytes em chunks
+            int chunkSize = 4096, offset = 0;
+            while (offset < fileBytes.Length)
+            {
+                int size = Math.Min(chunkSize, fileBytes.Length - offset);
+                stream.Write(fileBytes, offset, size);
+                offset += size;
+            }
+
+            string response = ReceiveMessage(stream).Trim();
+            serverClient.Close();
+            return response == "FILE_RECEIVED";
+        }
+        catch
+        {
+            Console.WriteLine($"Erro ao enviar ficheiro {path} ao servidor.");
+            return false;
+        }
+    }
+
+    // ── Rate limiting ──────────────────────────────────────────
+
+    static bool IsRateLimited(string sensorId)
+    {
+        rateMutex.WaitOne();
+        bool limited = false;
+        if (lastMessageTime.ContainsKey(sensorId))
+        {
+            double elapsed = (DateTime.Now - lastMessageTime[sensorId]).TotalMilliseconds;
+            if (elapsed < MSG_INTERVAL_MS) limited = true;
+        }
+        if (!limited) lastMessageTime[sensorId] = DateTime.Now;
+        rateMutex.ReleaseMutex();
+        return limited;
     }
 
     static void SendResponse(NetworkStream stream, string message)
@@ -53,56 +204,81 @@ class Gateway
 
         string path = $"Data/{tipo}.txt";
 
-        //Directory.CreateDirectory("data");
+        // Garante acesso sequencial ao ficheiro
+        Mutex m = GetFileMutex(path);
+        m.WaitOne();
+        try
+        {
+            Directory.CreateDirectory("Data");
 
-        File.AppendAllText(path, message + Environment.NewLine);
+            File.AppendAllText(path, message + Environment.NewLine);
+        }
+        finally
+        {
+            m.ReleaseMutex();
+        }
+        // Adiciona à fila de envio
+        EnqueueFile(path);
     }
 
     static bool SensorExists(string sensorId)
     {
         string path = "Data/sensores.csv";
 
-        if (!File.Exists(path)) return false;
-
-        var lines = File.ReadAllLines(path);
-
-        foreach (var line in lines)
+        Mutex m = GetFileMutex(path);
+        m.WaitOne();
+        try
         {
-            if (line.StartsWith(sensorId + ";"))
-                return true;
+            if (!File.Exists(path)) return false;
+            var lines = File.ReadAllLines(path);
+            foreach (var line in lines)
+                if (line.StartsWith(sensorId + ";"))
+                    return true;
+            return false;
         }
-
-        return false;
+        finally
+        {
+            m.ReleaseMutex();
+        }
     }
 
     static void UpdateSensor(string sensorId)
     {
         string path = "Data/sensores.csv";
 
-        if (!File.Exists(path)) return;
-
-        var lines = File.ReadAllLines(path);
-
-        for (int i = 0; i < lines.Length; i++)
+        Mutex m = GetFileMutex(path);
+        m.WaitOne();
+        try
         {
-            var parts = lines[i].Split(';');
-
-            if (parts[0] == sensorId)
+            if (!File.Exists(path)) return;
+            var lines = File.ReadAllLines(path);
+            for (int i = 0; i < lines.Length; i++)
             {
-                parts[4] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-                lines[i] = string.Join(";", parts);
+                var parts = lines[i].Split(';');
+                if (parts[0] == sensorId)
+                {
+                    parts[4] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                    lines[i] = string.Join(";", parts);
+                }
             }
+            File.WriteAllLines(path, lines);
         }
-
-        File.WriteAllLines(path, lines);
+        finally
+        {
+            m.ReleaseMutex();
+        }
     }
 
     static void HandleClient(TcpClient client)
     {
+        // Timeout: se não chegar mensagem em CLIENT_TIMEOUT_MS → excepção e desliga
+        client.ReceiveTimeout = CLIENT_TIMEOUT_MS;
+
         // Stream de comunicação com o cliente
         NetworkStream stream = client.GetStream();
-
         string sensorId = "";
+        // Timeout: se não chegar mensagem em CLIENT_TIMEOUT_MS → excepção e desliga
+        client.ReceiveTimeout = CLIENT_TIMEOUT_MS;
 
         try
         {
@@ -111,8 +287,18 @@ class Gateway
             {
                 string message = ReceiveMessage(stream);
 
-                Console.WriteLine("Recebido: " + message);
+                Console.WriteLine($"[Thread {Thread.CurrentThread.ManagedThreadId}] Recebido: {message}");
 
+                // Rate limiting (só para dados e heartbeat, não para HELLO)
+                if (!message.StartsWith("HELLO") && !message.StartsWith("DISCONNECT"))
+                {
+                    if (IsRateLimited(sensorId))
+                    {
+                        Console.WriteLine($"[Thread {threadId}] Sensor {sensorId} em rate limit.");
+                        SendResponse(stream, "ERROR:RATE_LIMITED");
+                        continue;
+                    }
+                }
 
                 // HELLO;S102
 
@@ -131,16 +317,20 @@ class Gateway
                     }
 
                     Console.WriteLine("Sensor ID: " + sensorId);
-
+                    UpdateSensor(sensorId);
                     // Responde ao sensor
                     SendResponse(stream, "OK");
                 }
 
-                // Tipos de dados (TEMP;HUM;RUIDO)
-                else if (message.Contains(";") && !message.StartsWith("HEARTBEAT") && !message.StartsWith("2"))
+                // HEARTBEAT
+                else if (message.StartsWith("HEARTBEAT"))
                 {
-                    // Aqui assumimos que é a lista de tipos de dados
-                    SendResponse(stream, "TYPES_OK");
+                    Console.WriteLine("Heartbeat de " + message);
+
+                    UpdateSensor(sensorId);
+
+                    // Resposta opcional
+                    SendResponse(stream, "HEARTBEAT_OK");
                 }
 
                 // Dados ambientais
@@ -156,16 +346,11 @@ class Gateway
                     SendToServer(message);
                 }
 
-                // HEARTBEAT
-
-                else if (message.StartsWith("HEARTBEAT"))
+                // Tipos de dados
+                else if (message.Contains(";"))
                 {
-                    Console.WriteLine("Heartbeat de " + message);
-
-                    UpdateSensor(sensorId);
-
-                    // Resposta opcional
-                    SendResponse(stream, "HEARTBEAT_OK");
+                    // Aqui assumimos que é a lista de tipos de dados
+                    SendResponse(stream, "TYPES_OK");
                 }
 
                 // DISCONNECT
@@ -183,14 +368,26 @@ class Gateway
                 }
             }
         }
+        catch (IOException)
+        {
+            // ReceiveTimeout expirou ou ligação perdida
+            Console.WriteLine($"[Thread {threadId}] Sensor {sensorId} timeout ou ligação perdida.");
+        }
         catch (Exception e)
         {
-            Console.WriteLine("Erro: " + e.Message);
+            Console.WriteLine($"[Thread {Thread.CurrentThread.ManagedThreadId}] Erro: {e.Message}");
         }
+        finally
+        {
+            client.Close();
 
-        // Fecha a ligação com o sensor
-        client.Close();
-        Console.WriteLine("Sensor desconectado.");
+            // Decrementa contador de sensores ativos
+            sensorCountMutex.WaitOne();
+            activeSensors--;
+            sensorCountMutex.ReleaseMutex();
+
+            Console.WriteLine($"[Thread {threadId}] Sensor desconectado. ({activeSensors}/{MAX_SENSORS})");
+        }
     }
 
     static void SendToServer(string data)
