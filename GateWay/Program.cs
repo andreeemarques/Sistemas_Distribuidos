@@ -43,7 +43,7 @@ class Gateway
 
     static void SendResponse(NetworkStream stream, string message)
     {
-        string resposta = message + "\n";
+        string resposta = message;
         byte[] resp = Encoding.UTF8.GetBytes(resposta);
         stream.Write(resp, 0, resp.Length);
     }
@@ -85,13 +85,46 @@ class Gateway
 
         Mutex m = GetFileMutex(path);
         m.WaitOne();
+
         try
         {
-            if (!File.Exists(path)) return false;
+            // Se ficheiro não existir, cria-o
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory("Data");
+                File.WriteAllText(path, "");
+            }
+
             var lines = File.ReadAllLines(path);
-            foreach (var line in lines)
-                if (line.StartsWith(sensorId + ";"))
-                    return true;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var parts = lines[i].Split(';');
+
+                if (parts[0] == sensorId)
+                {
+                    // Sensor já está ativo
+                    if (parts[1] == "ATIVO")
+                        return true;
+
+                    // Sensor existe mas está inativo
+                    if (parts[1] == "INATIVO")
+                    {
+                        parts[1] = "ATIVO";
+                        lines[i] = string.Join(";", parts);
+
+                        File.WriteAllLines(path, lines);
+
+                        return false;
+                    }
+                }
+            }
+
+            // Sensor não existe → adicionar nova linha
+            string novaLinha = $"{sensorId};ATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
+
+            File.AppendAllText(path, novaLinha + Environment.NewLine);
+
             return false;
         }
         finally
@@ -103,28 +136,43 @@ class Gateway
     static void UpdateSensor(string sensorId)
     {
         string path = "Data/sensores.csv";
-
         Mutex m = GetFileMutex(path);
         m.WaitOne();
         try
         {
-            if (!File.Exists(path)) return;
-            var lines = File.ReadAllLines(path);
+            if (!File.Exists(path))
+            {
+                Console.WriteLine("ERRO: sensores.csv não encontrado.");
+                return;
+            }
+
+            var lines = File.ReadAllLines(path, Encoding.UTF8);
+
+            if (lines.Length > 0)
+                lines[0] = lines[0].TrimStart('\uFEFF');
+
+            lines = File.ReadAllLines(path);
+            bool found = false;
+
             for (int i = 0; i < lines.Length; i++)
             {
                 var parts = lines[i].Split(';');
-                if (parts[0] == sensorId)
+                if (parts[0].Trim() == sensorId.Trim())
                 {
-                    parts[4] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                    parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
                     lines[i] = string.Join(";", parts);
+                    found = true;
                 }
             }
+
+            if (!found)
+                Console.WriteLine($"AVISO: Sensor '{sensorId}' não encontrado no CSV.");
+            else
+                Console.WriteLine($"Sensor '{sensorId}' atualizado no CSV.");
+
             File.WriteAllLines(path, lines);
         }
-        finally
-        {
-            m.ReleaseMutex();
-        }
+        finally { m.ReleaseMutex(); }
     }
 
     static void HandleClient(TcpClient client)
@@ -132,12 +180,14 @@ class Gateway
         NetworkStream stream = client.GetStream();
         string sensorId = "";
 
+        int threadId = Thread.CurrentThread.ManagedThreadId;
+
         try
         {
             // Loop para ler mensagens continuamente
             while (true)
             {
-                string message = ReceiveMessage(stream);
+                string message = ReceiveMessage(stream).Trim();
 
                 Console.WriteLine($"[Thread {Thread.CurrentThread.ManagedThreadId}] Recebido: {message}");
 
@@ -151,14 +201,13 @@ class Gateway
                     // Guarda o ID do sensor
                     sensorId = parts[1];
 
-                    if (!SensorExists(sensorId))
+                    if (SensorExists(sensorId))
                     {
                         SendResponse(stream, "ERROR:SENSOR_NOT_REGISTERED");
                         continue;
                     }
 
                     Console.WriteLine("Sensor ID: " + sensorId);
-                    UpdateSensor(sensorId);
                     // Responde ao sensor
                     SendResponse(stream, "OK");
                 }
@@ -176,7 +225,7 @@ class Gateway
 
                 // Dados ambientais
                 // formato: timestamp;id;zona;tipo;valor
-                else if (message.Split(';').Length == 5)
+                else if (message.Split(';').Length == 5 && message.StartsWith("2"))
                 {
                     Console.WriteLine("Dados recebidos: " + message);
 
