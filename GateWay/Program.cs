@@ -24,6 +24,20 @@ class Gateway
         return m;
     }
 
+    static readonly List<string> Parametros = new List<string>
+    {
+        "TEMP", "HUM", "RUIDO", "AR", "PM2.5", "PM10", "LUM"
+       };
+
+    static List<string> ValidarTipos(string[] tipos)
+    {
+        List<string> invalidos = new List<string>();
+        foreach (string tipo in tipos)
+            if (!Parametros.Contains(tipo.Trim()))
+                invalidos.Add(tipo.Trim());
+        return invalidos;
+    }
+
     static void Main()
     {
         int port = 5000;
@@ -34,6 +48,10 @@ class Gateway
         Thread senderThread = new Thread(() => BatchSender(30)); // 30 segundos
         senderThread.IsBackground = true;
         senderThread.Start();
+
+        Thread watchdogThread = new Thread(() => Watchdog(60)); // 60 segundos sem mensagem → inativo
+        watchdogThread.IsBackground = true;
+        watchdogThread.Start();
 
         while (true)
         {
@@ -245,6 +263,15 @@ class Gateway
                 // formato: timestamp;id;zona;tipo;valor
                 else if (message.Split(';').Length == 5 && message.StartsWith("2"))
                 {
+                    string tipo = message.Split(';')[3];
+
+                    if (!Parametros.Contains(tipo))
+                    {
+                        Console.WriteLine($"Tipo de dado inválido: {tipo}");
+                        SendResponse(stream, $"ERROR:INVALID_TYPE:{tipo}");
+                        continue; // ignora este dado
+                    }
+
                     dataMutex.WaitOne();
                     try
                     {
@@ -265,8 +292,16 @@ class Gateway
                 // Tipos de dados
                 else if (message.Contains(";"))
                 {
-                    // Aqui assumimos que é a lista de tipos de dados
-                    SendResponse(stream, "TYPES_OK");
+                    string[] tipos = message.Split(';');
+                    List<string> invalidos = ValidarTipos(tipos);
+
+                    if (invalidos.Count > 0)
+                    {
+                        Console.WriteLine($"Tipos inválidos: {string.Join(", ", invalidos)}");
+                        SendResponse(stream, $"ERROR:INVALID_TYPES:{string.Join(",", invalidos)}");
+                    }
+                    else
+                        SendResponse(stream, "TYPES_OK");
                 }
 
                 // DISCONNECT
@@ -376,6 +411,60 @@ class Gateway
             }
 
             Console.WriteLine("[Batch] Envio concluído.");
+        }
+    }
+
+    static void Watchdog(int timeoutSeconds)
+    {
+        while (true)
+        {
+            Thread.Sleep(timeoutSeconds * 1000);
+
+            Console.WriteLine("[Watchdog] A verificar sensores...");
+
+            string path = "Data/sensores.csv";
+            Mutex m = GetFileMutex(path);
+            m.WaitOne();
+            try
+            {
+                if (!File.Exists(path)) return;
+
+                var lines = File.ReadAllLines(path);
+                bool alterado = false;
+
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split(';');
+                    if (parts.Length < 3) continue;
+
+                    string sensorId = parts[0];
+                    string estado = parts[1];
+                    string timestamp = parts[2];
+
+                    // Só verifica sensores ativos
+                    if (estado != "ATIVO") continue;
+
+                    DateTime lastSeen = DateTime.Parse(timestamp);
+                    double segundos = (DateTime.Now - lastSeen).TotalSeconds;
+
+                    if (segundos > timeoutSeconds)
+                    {
+                        Console.WriteLine($"[Watchdog] Sensor '{sensorId}' inativo por timeout ({segundos:F0}s).");
+                        parts[1] = "INATIVO";
+                        lines[i] = string.Join(";", parts);
+                        alterado = true;
+                    }
+                }
+
+                if (alterado)
+                    File.WriteAllLines(path, lines);
+            }
+            finally
+            {
+                m.ReleaseMutex();
+            }
+
+            Console.WriteLine("[Watchdog] Verificação concluída.");
         }
     }
 }
