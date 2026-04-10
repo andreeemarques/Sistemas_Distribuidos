@@ -12,6 +12,8 @@ class Gateway
     static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
     static Mutex dictMutex = new Mutex(); // protege o próprio dicionário
 
+    static Mutex dataMutex = new Mutex();
+
     static Mutex GetFileMutex(string path)
     {
         dictMutex.WaitOne();
@@ -28,6 +30,10 @@ class Gateway
         TcpListener server = new TcpListener(IPAddress.Any, port);
         server.Start();
         Console.WriteLine("Gateway iniciado na porta " + port);
+
+        Thread senderThread = new Thread(() => BatchSender(30)); // 30 segundos
+        senderThread.IsBackground = true;
+        senderThread.Start();
 
         while (true)
         {
@@ -133,7 +139,7 @@ class Gateway
         }
     }
 
-    static void UpdateSensor(string sensorId)
+    static void UpdateSensor(string sensorId, string mensagem)
     {
         string path = "Data/sensores.csv";
         Mutex m = GetFileMutex(path);
@@ -146,25 +152,34 @@ class Gateway
                 return;
             }
 
-            var lines = File.ReadAllLines(path, Encoding.UTF8);
-
-            if (lines.Length > 0)
-                lines[0] = lines[0].TrimStart('\uFEFF');
-
-            lines = File.ReadAllLines(path);
+            var lines = File.ReadAllLines(path);
             bool found = false;
 
-            for (int i = 0; i < lines.Length; i++)
+            if (mensagem == "DISCONNECT")
             {
-                var parts = lines[i].Split(';');
-                if (parts[0].Trim() == sensorId.Trim())
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-                    lines[i] = string.Join(";", parts);
-                    found = true;
+                    var parts = lines[i].Split(';');
+                    if (parts[0] == sensorId)
+                    {
+                        parts[1] = "INATIVO";
+                        parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        lines[i] = string.Join(";", parts);
+                        found = true;
+                    }
                 }
             }
-
+            else
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split(';');
+                    if (parts[0] == sensorId)
+                    {
+                        parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        lines[i] = string.Join(";", parts);
+                        found = true;
+                    }
+                }
             if (!found)
                 Console.WriteLine($"AVISO: Sensor '{sensorId}' não encontrado no CSV.");
             else
@@ -172,7 +187,10 @@ class Gateway
 
             File.WriteAllLines(path, lines);
         }
-        finally { m.ReleaseMutex(); }
+        finally
+        {
+            m.ReleaseMutex();
+        }
     }
 
     static void HandleClient(TcpClient client)
@@ -203,7 +221,7 @@ class Gateway
 
                     if (SensorExists(sensorId))
                     {
-                        SendResponse(stream, "ERROR:SENSOR_NOT_REGISTERED");
+                        SendResponse(stream, "ERROR:SENSOR_IS_ACTIVE");
                         continue;
                     }
 
@@ -217,7 +235,7 @@ class Gateway
                 {
                     Console.WriteLine("Heartbeat de " + message);
 
-                    UpdateSensor(sensorId);
+                    UpdateSensor(sensorId, null);
 
                     // Resposta opcional
                     SendResponse(stream, "HEARTBEAT_OK");
@@ -227,13 +245,21 @@ class Gateway
                 // formato: timestamp;id;zona;tipo;valor
                 else if (message.Split(';').Length == 5 && message.StartsWith("2"))
                 {
-                    Console.WriteLine("Dados recebidos: " + message);
+                    dataMutex.WaitOne();
+                    try
+                    {
+                        Console.WriteLine("Dados recebidos: " + message);
 
-                    SaveData(message);
-                    UpdateSensor(sensorId);
+                        SaveData(message);
+                        UpdateSensor(sensorId, null);
 
-                    SendResponse(stream, "DATA_RECEIVED");
-                    SendToServer(message);
+                        SendResponse(stream, "DATA_RECEIVED");
+                        
+                    }
+                    finally
+                    {
+                        dataMutex.ReleaseMutex();
+                    }
                 }
 
                 // Tipos de dados
@@ -247,6 +273,7 @@ class Gateway
                 else if (message == "DISCONNECT")
                 {
                     SendResponse(stream, "BYE");
+                    UpdateSensor(sensorId, null);
                     break; // sai do ciclo
                 }
 
@@ -270,7 +297,7 @@ class Gateway
         }
     }
 
-    static void SendToServer(string data)
+    static bool SendToServer(string data)
     {
         try
         {
@@ -288,10 +315,67 @@ class Gateway
             Console.WriteLine("Servidor respondeu: " + response);
 
             serverClient.Close();
+            return true;
         }
         catch
         {
-            Console.WriteLine("Erro ao conectar ao servidor.");
+            Console.WriteLine($"Erro ao enviar: {data}");
+            return false;
+        }
+    }
+
+    static void BatchSender(int intervalSeconds)
+    {
+        while (true)
+        {
+            Thread.Sleep(intervalSeconds * 1000);
+
+            Console.WriteLine("[Batch] A enviar dados ao servidor...");
+
+            string[] files = Directory.GetFiles("Data", "*.txt");
+
+            foreach (string file in files)
+            {
+                Mutex m = GetFileMutex(file);
+                m.WaitOne();
+                string[] lines;
+                try
+                {
+                    lines = File.ReadAllLines(file);
+                }
+                finally
+                {
+                    m.ReleaseMutex();
+                }
+
+                List<string> falhas = new List<string>();
+
+                foreach (string line in lines)
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        bool sucesso = SendToServer(line);
+                        if (!sucesso)
+                            falhas.Add(line); // guarda as linhas que falharam
+                    }
+                }
+
+                // Reescreve o ficheiro apenas com as linhas que falharam
+                m.WaitOne();
+                try
+                {
+                    if (falhas.Count == 0)
+                        File.WriteAllText(file, ""); // tudo enviado, limpa
+                    else
+                        File.WriteAllLines(file, falhas); // mantém só as falhas
+                }
+                finally
+                {
+                    m.ReleaseMutex();
+                }
+            }
+
+            Console.WriteLine("[Batch] Envio concluído.");
         }
     }
 }
