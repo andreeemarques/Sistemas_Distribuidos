@@ -53,6 +53,10 @@ class Gateway
         watchdogThread.IsBackground = true;
         watchdogThread.Start();
 
+        Thread udpThread = new Thread(() => ReceiveVideo(7000)); // porta 7000 para vídeo
+        udpThread.IsBackground = true;
+        udpThread.Start();
+
         while (true)
         {
             TcpClient client = server.AcceptTcpClient();
@@ -465,6 +469,108 @@ class Gateway
             }
 
             Console.WriteLine("[Watchdog] Verificação concluída.");
+        }
+    }
+
+    static void ReceiveVideo(int port)
+    {
+        UdpClient udpServer = new UdpClient(port);
+        Console.WriteLine($"[UDP] À escuta de vídeo na porta {port}");
+
+        // Dicionário para acumular chunks por frameId
+        // chave: frameId, valor: dicionário de chunkIndex → dados
+        Dictionary<int, Dictionary<int, byte[]>> frames = new Dictionary<int, Dictionary<int, byte[]>>();
+        Dictionary<int, int> totalChunksMap = new Dictionary<int, int>();
+
+        IPEndPoint sensorEndpoint = new IPEndPoint(IPAddress.Any, 0);
+
+        while (true)
+        {
+            try
+            {
+                byte[] packet = udpServer.Receive(ref sensorEndpoint);
+
+                // Protocolo do pacote:
+                // [0..3]  = frameId      (int, 4 bytes)
+                // [4..7]  = chunkIndex   (int, 4 bytes)
+                // [8..11] = totalChunks  (int, 4 bytes)
+                // [12..]  = dados do chunk
+
+                if (packet.Length < 12) continue;
+
+                int frameId = BitConverter.ToInt32(packet, 0);
+                int chunkIndex = BitConverter.ToInt32(packet, 4);
+                int total = BitConverter.ToInt32(packet, 8);
+                byte[] data = new byte[packet.Length - 12];
+                Array.Copy(packet, 12, data, 0, data.Length);
+
+                // Inicializa o frame se necessário
+                if (!frames.ContainsKey(frameId))
+                {
+                    frames[frameId] = new Dictionary<int, byte[]>();
+                    totalChunksMap[frameId] = total;
+                }
+
+                frames[frameId][chunkIndex] = data;
+
+                Console.WriteLine($"[UDP] Frame {frameId} — chunk {chunkIndex + 1}/{total}");
+
+                // Verifica se o frame está completo
+                if (frames[frameId].Count == totalChunksMap[frameId])
+                {
+                    Console.WriteLine($"[UDP] Frame {frameId} completo. A reconstruir...");
+
+                    // Reconstrói o frame pela ordem dos chunks
+                    List<byte> frameData = new List<byte>();
+                    for (int i = 0; i < total; i++)
+                        frameData.AddRange(frames[frameId][i]);
+
+                    // Limpa o frame do dicionário
+                    frames.Remove(frameId);
+                    totalChunksMap.Remove(frameId);
+
+                    // Envia ao servidor
+                    SendVideoToServer(frameId, frameData.ToArray());
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[UDP] Erro: {e.Message}");
+            }
+        }
+    }
+
+    static void SendVideoToServer(int frameId, byte[] frameData)
+    {
+        try
+        {
+            UdpClient udpClient = new UdpClient();
+            IPEndPoint serverEndpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 7001); // porta vídeo do servidor
+
+            int chunkSize = 60000; // ~60KB por pacote UDP
+            int totalChunks = (int)Math.Ceiling((double)frameData.Length / chunkSize);
+
+            for (int i = 0; i < totalChunks; i++)
+            {
+                int offset = i * chunkSize;
+                int size = Math.Min(chunkSize, frameData.Length - offset);
+
+                // Monta o pacote com o mesmo protocolo
+                byte[] packet = new byte[12 + size];
+                BitConverter.GetBytes(frameId).CopyTo(packet, 0);
+                BitConverter.GetBytes(i).CopyTo(packet, 4);
+                BitConverter.GetBytes(totalChunks).CopyTo(packet, 8);
+                Array.Copy(frameData, offset, packet, 12, size);
+
+                udpClient.Send(packet, packet.Length, serverEndpoint);
+            }
+
+            udpClient.Close();
+            Console.WriteLine($"[UDP] Frame {frameId} enviado ao servidor ({totalChunks} chunks).");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[UDP] Erro ao enviar frame ao servidor: {e.Message}");
         }
     }
 }
