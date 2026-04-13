@@ -5,7 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
-class Servidor
+class Program
 {
     static Mutex mutex = new Mutex();
 
