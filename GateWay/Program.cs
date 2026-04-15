@@ -1,27 +1,32 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using System.Collections.Generic;
 
 class Gateway
 {
     // Um mutex por ficheiro para garantir acesso sequencial
     static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
-    static Mutex dictMutex = new Mutex(); // protege o próprio dicionário
-
-    static Mutex dataMutex = new Mutex();
+    static Mutex dictMutex = new Mutex();
 
     static Mutex GetFileMutex(string path)
     {
         dictMutex.WaitOne();
-        if (!fileMutexes.ContainsKey(path))
-            fileMutexes[path] = new Mutex();
-        Mutex m = fileMutexes[path];
-        dictMutex.ReleaseMutex();
-        return m;
+        try
+        {
+            if (!fileMutexes.ContainsKey(path))
+                fileMutexes[path] = new Mutex();
+            return fileMutexes[path];
+        }
+        finally
+        {
+            dictMutex.ReleaseMutex();
+        }
     }
 
     static readonly List<string> Parametros = new List<string>
@@ -33,8 +38,8 @@ class Gateway
     {
         List<string> invalidos = new List<string>();
         foreach (string tipo in tipos)
-            if (!Parametros.Contains(tipo.Trim()))
-                invalidos.Add(tipo.Trim());
+            if (!Parametros.Contains(tipo))
+                invalidos.Add(tipo);
         return invalidos;
     }
 
@@ -45,15 +50,15 @@ class Gateway
         server.Start();
         Console.WriteLine("Gateway iniciado na porta " + port);
 
-        Thread senderThread = new Thread(() => BatchSender(30)); // 30 segundos
+        Thread senderThread = new Thread(() => DataSender(30));
         senderThread.IsBackground = true;
         senderThread.Start();
 
-        Thread watchdogThread = new Thread(() => Watchdog(60)); // 60 segundos sem mensagem → inativo
+        Thread watchdogThread = new Thread(() => Watchdog(60));
         watchdogThread.IsBackground = true;
         watchdogThread.Start();
 
-        Thread udpThread = new Thread(() => ReceiveVideo(7000)); // porta 7000 para vídeo
+        Thread udpThread = new Thread(() => ReceiveVideo(5001));
         udpThread.IsBackground = true;
         udpThread.Start();
 
@@ -62,7 +67,6 @@ class Gateway
             TcpClient client = server.AcceptTcpClient();
             Console.WriteLine("Sensor conectado!");
 
-            // Cria uma thread por sensor — concorrência
             Thread t = new Thread(() => HandleClient(client));
             t.IsBackground = true;
             t.Start();
@@ -71,8 +75,7 @@ class Gateway
 
     static void SendResponse(NetworkStream stream, string message)
     {
-        string resposta = message;
-        byte[] resp = Encoding.UTF8.GetBytes(resposta);
+        byte[] resp = Encoding.UTF8.GetBytes(message);
         stream.Write(resp, 0, resp.Length);
     }
 
@@ -80,15 +83,14 @@ class Gateway
     {
         byte[] buffer = new byte[1024];
         int bytesRead = stream.Read(buffer, 0, buffer.Length);
-        string resposta = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-        return resposta;
+        return Encoding.UTF8.GetString(buffer, 0, bytesRead);
     }
 
     static void SaveData(string message)
     {
         string[] parts = message.Split(';');
 
-        string tipo = parts[3]; // TEMP, HUM, etc.
+        string tipo = parts[3];
 
         string path = $"Data/{tipo}.txt";
 
@@ -224,21 +226,14 @@ class Gateway
 
         try
         {
-            // Loop para ler mensagens continuamente
             while (true)
             {
-                string message = ReceiveMessage(stream).Trim();
-
-                Console.WriteLine($"[Thread {Thread.CurrentThread.ManagedThreadId}] Recebido: {message}");
-
-                // HELLO;S102
+                string message = ReceiveMessage(stream);
 
                 if (message.StartsWith("HELLO"))
                 {
-                    // Divide a mensagem pelo separador ';'
                     string[] parts = message.Split(';');
 
-                    // Guarda o ID do sensor
                     sensorId = parts[1];
 
                     if (SensorExists(sensorId))
@@ -247,8 +242,7 @@ class Gateway
                         continue;
                     }
 
-                    Console.WriteLine("Sensor ID: " + sensorId);
-                    // Responde ao sensor
+                    Console.WriteLine("[DATA] Sensor ID: " + sensorId);
                     SendResponse(stream, "OK");
                 }
 
@@ -260,7 +254,7 @@ class Gateway
                     UpdateSensor(sensorId, null);
 
                     // Resposta opcional
-                    SendResponse(stream, "HEARTBEAT_OK");
+                    SendResponse(stream, "[DATA] HEARTBEAT_OK");
                 }
 
                 // Dados ambientais
@@ -273,24 +267,15 @@ class Gateway
                     {
                         Console.WriteLine($"Tipo de dado inválido: {tipo}");
                         SendResponse(stream, $"ERROR:INVALID_TYPE:{tipo}");
-                        continue; // ignora este dado
+                        continue;
                     }
 
-                    dataMutex.WaitOne();
-                    try
-                    {
-                        Console.WriteLine("Dados recebidos: " + message);
+                    Console.WriteLine("[DATA] Dados recebidos: " + message);
 
-                        SaveData(message);
-                        UpdateSensor(sensorId, null);
+                    SaveData(message);
+                    UpdateSensor(sensorId, null);
 
-                        SendResponse(stream, "DATA_RECEIVED");
-                        
-                    }
-                    finally
-                    {
-                        dataMutex.ReleaseMutex();
-                    }
+                    SendResponse(stream, "DATA_RECEIVED");
                 }
 
                 // Tipos de dados
@@ -301,7 +286,7 @@ class Gateway
 
                     if (invalidos.Count > 0)
                     {
-                        Console.WriteLine($"Tipos inválidos: {string.Join(", ", invalidos)}");
+                        Console.WriteLine($"[DATA] Tipos inválidos: {string.Join(", ", invalidos)}");
                         SendResponse(stream, $"ERROR:INVALID_TYPES:{string.Join(",", invalidos)}");
                     }
                     else
@@ -312,8 +297,8 @@ class Gateway
                 else if (message == "DISCONNECT")
                 {
                     SendResponse(stream, "BYE");
-                    UpdateSensor(sensorId, null);
-                    break; // sai do ciclo
+                    UpdateSensor(sensorId, message);
+                    break;
                 }
 
                 // Mensagem desconhecida
@@ -340,15 +325,12 @@ class Gateway
     {
         try
         {
-            // Liga ao servidor (porta 6000)
             TcpClient serverClient = new TcpClient("127.0.0.1", 6000);
 
             NetworkStream stream = serverClient.GetStream();
 
-            // Envia os dados recebidos do sensor
             SendResponse(stream, data);
 
-            // Espera resposta do servidor
             string response = ReceiveMessage(stream);
 
             Console.WriteLine("Servidor respondeu: " + response);
@@ -363,13 +345,13 @@ class Gateway
         }
     }
 
-    static void BatchSender(int intervalSeconds)
+    static void DataSender(int intervalSeconds)
     {
         while (true)
         {
             Thread.Sleep(intervalSeconds * 1000);
 
-            Console.WriteLine("[Batch] A enviar dados ao servidor...");
+            Console.WriteLine("[DATA] A enviar dados ao servidor...");
 
             string[] files = Directory.GetFiles("Data", "*.txt");
 
@@ -404,9 +386,9 @@ class Gateway
                 try
                 {
                     if (falhas.Count == 0)
-                        File.WriteAllText(file, ""); // tudo enviado, limpa
+                        File.WriteAllText(file, "");
                     else
-                        File.WriteAllLines(file, falhas); // mantém só as falhas
+                        File.WriteAllLines(file, falhas);
                 }
                 finally
                 {
@@ -414,7 +396,7 @@ class Gateway
                 }
             }
 
-            Console.WriteLine("[Batch] Envio concluído.");
+            Console.WriteLine("[DATA] Envio concluído.");
         }
     }
 
@@ -439,14 +421,16 @@ class Gateway
                 for (int i = 0; i < lines.Length; i++)
                 {
                     var parts = lines[i].Split(';');
-                    if (parts.Length < 3) continue;
+                    if (parts.Length < 3)
+                        continue;
 
                     string sensorId = parts[0];
                     string estado = parts[1];
                     string timestamp = parts[2];
 
                     // Só verifica sensores ativos
-                    if (estado != "ATIVO") continue;
+                    if (estado != "ATIVO")
+                        continue;
 
                     DateTime lastSeen = DateTime.Parse(timestamp);
                     double segundos = (DateTime.Now - lastSeen).TotalSeconds;
@@ -472,15 +456,17 @@ class Gateway
         }
     }
 
+
+    static List<byte[]> frameBuffer = new List<byte[]>();
+    static Mutex bufferMutex = new Mutex();
+
+    static string activeVideoSensor = null;
+    static Mutex videoMutex = new Mutex();
+
     static void ReceiveVideo(int port)
     {
         UdpClient udpServer = new UdpClient(port);
         Console.WriteLine($"[UDP] À escuta de vídeo na porta {port}");
-
-        // Dicionário para acumular chunks por frameId
-        // chave: frameId, valor: dicionário de chunkIndex → dados
-        Dictionary<int, Dictionary<int, byte[]>> frames = new Dictionary<int, Dictionary<int, byte[]>>();
-        Dictionary<int, int> totalChunksMap = new Dictionary<int, int>();
 
         IPEndPoint sensorEndpoint = new IPEndPoint(IPAddress.Any, 0);
 
@@ -490,87 +476,158 @@ class Gateway
             {
                 byte[] packet = udpServer.Receive(ref sensorEndpoint);
 
-                // Protocolo do pacote:
-                // [0..3]  = frameId      (int, 4 bytes)
-                // [4..7]  = chunkIndex   (int, 4 bytes)
-                // [8..11] = totalChunks  (int, 4 bytes)
-                // [12..]  = dados do chunk
+                string text = Encoding.UTF8.GetString(packet);
 
-                if (packet.Length < 12) continue;
-
-                int frameId = BitConverter.ToInt32(packet, 0);
-                int chunkIndex = BitConverter.ToInt32(packet, 4);
-                int total = BitConverter.ToInt32(packet, 8);
-                byte[] data = new byte[packet.Length - 12];
-                Array.Copy(packet, 12, data, 0, data.Length);
-
-                // Inicializa o frame se necessário
-                if (!frames.ContainsKey(frameId))
+                if (text.StartsWith("VIDEO_HELLO"))
                 {
-                    frames[frameId] = new Dictionary<int, byte[]>();
-                    totalChunksMap[frameId] = total;
+                    string[] parts = text.Split(';');
+                    string sensorId = parts[1];
+
+                    videoMutex.WaitOne();
+                    try
+                    {
+                        if (activeVideoSensor == null)
+                        {
+                            activeVideoSensor = sensorId;
+                            Console.WriteLine($"[VIDEO] Sensor ativo: {sensorId}");
+
+                            byte[] resp = Encoding.UTF8.GetBytes("VIDEO_OK");
+                            udpServer.Send(resp, resp.Length, sensorEndpoint);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[VIDEO] Sensor em espera: {sensorId}");
+
+                            byte[] resp = Encoding.UTF8.GetBytes("VIDEO_WAIT");
+                            udpServer.Send(resp, resp.Length, sensorEndpoint);
+                        }
+                    }
+                    finally
+                    {
+                        videoMutex.ReleaseMutex();
+                    }
+                    continue;
                 }
 
-                frames[frameId][chunkIndex] = data;
-
-                Console.WriteLine($"[UDP] Frame {frameId} — chunk {chunkIndex + 1}/{total}");
-
-                // Verifica se o frame está completo
-                if (frames[frameId].Count == totalChunksMap[frameId])
+                if (text.StartsWith("VIDEO_END"))
                 {
-                    Console.WriteLine($"[UDP] Frame {frameId} completo. A reconstruir...");
+                    string[] parts = text.Split(';');
+                    string sensorId = parts[1];
 
-                    // Reconstrói o frame pela ordem dos chunks
-                    List<byte> frameData = new List<byte>();
-                    for (int i = 0; i < total; i++)
-                        frameData.AddRange(frames[frameId][i]);
+                    videoMutex.WaitOne();
+                    try
+                    {
+                        if (activeVideoSensor == sensorId)
+                        {
+                            Console.WriteLine($"[VIDEO] Sensor terminou: {sensorId}");
+                            activeVideoSensor = null;
+                        }
+                    }
+                    finally
+                    {
+                        videoMutex.ReleaseMutex();
+                    }
+                    FlushBuffer(sensorId);
+                    continue;
+                }
 
-                    // Limpa o frame do dicionário
-                    frames.Remove(frameId);
-                    totalChunksMap.Remove(frameId);
+                int headerEndIndex = Array.IndexOf(packet, (byte)'\n');
+                if (headerEndIndex == -1)
+                    continue;
 
-                    // Envia ao servidor
-                    SendVideoToServer(frameId, frameData.ToArray());
+                string header = Encoding.UTF8.GetString(packet, 0, headerEndIndex);
+
+                byte[] payload = new byte[packet.Length - headerEndIndex - 1];
+                Array.Copy(packet, headerEndIndex + 1, payload, 0, payload.Length);
+
+                var partsFrame = header.Split(';');
+                if (partsFrame.Length < 5)
+                    continue;
+
+                int size = int.Parse(partsFrame[4]);
+
+                string sensorIdFrame = partsFrame[1];
+
+                videoMutex.WaitOne();
+                try
+                {
+                    if (sensorIdFrame != activeVideoSensor)
+                        continue;
+
+                    bufferMutex.WaitOne();
+                    try
+                    {
+                        frameBuffer.Add(payload);
+
+                        Console.WriteLine($"[VIDEO] Frame guardado: {frameBuffer.Count}");
+
+                        if (frameBuffer.Count == size / 2)
+                        {
+                            Console.WriteLine("[VIDEO] Enviando primeira metade...");
+                            SendVideo(frameBuffer.ToList(), activeVideoSensor);
+                            frameBuffer.Clear();
+                        }
+                    }
+                    finally
+                    {
+                        bufferMutex.ReleaseMutex();
+                    }
+                }
+                finally
+                {
+                    videoMutex.ReleaseMutex();
                 }
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                Console.WriteLine($"[UDP] Erro: {e.Message}");
+                Console.WriteLine($"[VIDEO] Erro: {ex.Message}");
             }
         }
+
     }
 
-    static void SendVideoToServer(int frameId, byte[] frameData)
+    static void SendVideo(List<byte[]> frames, string sensorId)
     {
         try
         {
-            UdpClient udpClient = new UdpClient();
-            IPEndPoint serverEndpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 7001); // porta vídeo do servidor
-
-            int chunkSize = 60000; // ~60KB por pacote UDP
-            int totalChunks = (int)Math.Ceiling((double)frameData.Length / chunkSize);
-
-            for (int i = 0; i < totalChunks; i++)
+            using (TcpClient client = new TcpClient("127.0.0.1", 7001))
+            using (NetworkStream ns = client.GetStream())
             {
-                int offset = i * chunkSize;
-                int size = Math.Min(chunkSize, frameData.Length - offset);
+                int i = 0;
+                foreach (var frame in frames)
+                {
+                    string header = $"FRAME;{sensorId};{i};{frame.Length}\n";
+                    SendResponse(ns, header);
+                    ns.Write(frame, 0, frame.Length);
+                    i++;
+                }
 
-                // Monta o pacote com o mesmo protocolo
-                byte[] packet = new byte[12 + size];
-                BitConverter.GetBytes(frameId).CopyTo(packet, 0);
-                BitConverter.GetBytes(i).CopyTo(packet, 4);
-                BitConverter.GetBytes(totalChunks).CopyTo(packet, 8);
-                Array.Copy(frameData, offset, packet, 12, size);
-
-                udpClient.Send(packet, packet.Length, serverEndpoint);
+                byte[] end = Encoding.UTF8.GetBytes($"FRAMES_END;{sensorId}\n");
+                ns.Write(end, 0, end.Length);
             }
 
-            udpClient.Close();
-            Console.WriteLine($"[UDP] Frame {frameId} enviado ao servidor ({totalChunks} chunks).");
+            Console.WriteLine($"[Video] Batch enviado ({frames.Count} frames)");
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            Console.WriteLine($"[UDP] Erro ao enviar frame ao servidor: {e.Message}");
+            Console.WriteLine($"[Video] Erro ao enviar: {ex.Message}");
+        }
+    }
+    static void FlushBuffer(string sensorId)
+    {
+        bufferMutex.WaitOne();
+        try
+        {
+            if (frameBuffer.Count > 0)
+            {
+                Console.WriteLine("[VIDEO] Enviando restante dos frames...");
+                SendVideo(frameBuffer.ToList(), sensorId);
+                frameBuffer.Clear();
+            }
+        }
+        finally
+        {
+            bufferMutex.ReleaseMutex();
         }
     }
 }
