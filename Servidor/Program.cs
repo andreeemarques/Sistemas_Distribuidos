@@ -4,13 +4,19 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using Servidor.Data;
+using Servidor.Models;
 
 class Program
 {
     static Mutex mutex = new Mutex();
+    static string ficheiro = "dados_recebidos.txt";
 
     static void Main()
     {
+        Thread worker = new Thread(ProcessarFicheiro);
+        worker.Start();
+
         TcpListener server = new TcpListener(IPAddress.Any, 6000);
         server.Start();
         Console.WriteLine("Servidor iniciado na porta 6000...");
@@ -32,14 +38,14 @@ class Program
         {
             int bytesRead = stream.Read(buffer, 0, buffer.Length);
             string data = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+
             Console.WriteLine("Recebido: " + data);
 
-            // Mutex garante que apenas um gateway escreve no ficheiro de cada vez
             mutex.WaitOne();
             try
             {
-                File.AppendAllText("dados_recebidos.txt", data + Environment.NewLine);
-                Console.WriteLine("Guardado em dados_recebidos.txt");
+                File.AppendAllText(ficheiro, data + Environment.NewLine);
+                Console.WriteLine("Guardado no ficheiro");
             }
             finally
             {
@@ -56,6 +62,81 @@ class Program
         finally
         {
             client.Close();
+        }
+    }
+
+    static void ProcessarFicheiro()
+    {
+        while (true)
+        {
+            try
+            {
+                mutex.WaitOne();
+                try
+                {
+                    if (!File.Exists(ficheiro))
+                        continue;
+
+                    string[] linhas = File.ReadAllLines(ficheiro);
+
+                    if (linhas.Length == 0)
+                        continue;
+
+                    File.WriteAllText(ficheiro, "");
+
+                    foreach (var linha in linhas)
+                    {
+                        try
+                        {
+                            string[] partes = linha.Split(';');
+
+                            if (partes.Length != 3)
+                                continue;
+
+                            string idSensor = partes[0];
+                            string tipo = partes[1];
+                            double valor = double.Parse(partes[2]);
+
+                            using (var db = new AppDbContext())
+                            {
+                                var sensor = db.Sensores.Find(idSensor);
+
+                                if (sensor == null)
+                                {
+                                    sensor = new Sensor { IdSensor = idSensor };
+                                    db.Sensores.Add(sensor);
+                                }
+
+                                db.Leituras.Add(new Leitura
+                                {
+                                    IdSensor = idSensor,
+                                    Tipo = tipo,
+                                    Valor = valor,
+                                    DataHora = DateTime.Now
+                                });
+
+                                db.SaveChanges();
+                            }
+
+                            Console.WriteLine("Inserido na BD!");
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine("Erro linha: " + e.Message);
+                        }
+                    }
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Erro: " + ex.Message);
+            }
+
+            Thread.Sleep(5000);
         }
     }
 }
