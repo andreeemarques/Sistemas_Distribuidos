@@ -31,38 +31,69 @@ class Program
 
     static void HandleClient(TcpClient client)
     {
-        NetworkStream stream = client.GetStream();
-        byte[] buffer = new byte[1024];
-
         try
         {
-            int bytesRead = stream.Read(buffer, 0, buffer.Length);
-            string data = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+            NetworkStream stream = client.GetStream();
 
-            Console.WriteLine("Recebido: " + data);
-
-            mutex.WaitOne();
-            try
+            string header = "";
+            int c;
+            while ((c = stream.ReadByte()) != -1)
             {
-                File.AppendAllText(ficheiro, data + Environment.NewLine);
-                Console.WriteLine("Guardado no ficheiro");
-            }
-            finally
-            {
-                mutex.ReleaseMutex();
+                if (c == '\n') break;
+                header += (char)c;
             }
 
-            byte[] resposta = Encoding.UTF8.GetBytes("DATA_STORED\r\n");
-            stream.Write(resposta, 0, resposta.Length);
+            Console.WriteLine("Recebido: " + header);
+
+            if (header.StartsWith("FRAME"))
+            {
+                string[] parts = header.Split(';');
+                int frameId = int.Parse(parts[1]);
+                int size = int.Parse(parts[2]);
+
+                byte[] frame = new byte[size];
+                int total = 0;
+
+                while (total < size)
+                {
+                    int lidos = stream.Read(frame, total, size - total);
+                    total += lidos;
+                }
+
+                Directory.CreateDirectory("frames");
+                File.WriteAllBytes($"frames/frame_{frameId}.jpg", frame);
+
+                Console.WriteLine($"Frame {frameId} guardado!");
+
+                byte[] resposta = Encoding.UTF8.GetBytes("OK\n");
+                stream.Write(resposta, 0, resposta.Length);
+            }
+            else
+            {
+                string data = header.Trim();
+
+                mutex.WaitOne();
+                try
+                {
+                    File.AppendAllText(ficheiro, data + Environment.NewLine);
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
+
+                Console.WriteLine("Dados guardados!");
+
+                byte[] resposta = Encoding.UTF8.GetBytes("DATA_STORED\n");
+                stream.Write(resposta, 0, resposta.Length);
+            }
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            Console.WriteLine("Erro: " + ex.Message);
+            Console.WriteLine("Erro: " + e.Message);
         }
-        finally
-        {
-            client.Close();
-        }
+
+        client.Close();
     }
 
     static void ProcessarFicheiro()
