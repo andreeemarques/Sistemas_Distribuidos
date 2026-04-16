@@ -68,7 +68,7 @@ class Gateway
             Console.WriteLine("Sensor conectado!");
 
             Thread t = new Thread(() => HandleClient(client));
-            t.IsBackground = true;
+            //t.IsBackground = true;
             t.Start();
         }
     }
@@ -253,8 +253,7 @@ class Gateway
 
                     UpdateSensor(sensorId, null);
 
-                    // Resposta opcional
-                    SendResponse(stream, "[DATA] HEARTBEAT_OK");
+                    SendResponse(stream, "HEARTBEAT_OK");
                 }
 
                 // Dados ambientais
@@ -559,8 +558,6 @@ class Gateway
                     {
                         frameBuffer.Add(payload);
 
-                        Console.WriteLine($"[VIDEO] Frame guardado: {frameBuffer.Count}");
-
                         if (frameBuffer.Count == size / 2)
                         {
                             Console.WriteLine("[VIDEO] Enviando primeira metade...");
@@ -602,11 +599,22 @@ class Gateway
                     i++;
                 }
 
-                byte[] end = Encoding.UTF8.GetBytes($"FRAMES_END;{sensorId}\n");
-                ns.Write(end, 0, end.Length);
-            }
+                string end = $"FRAMES_END;{sensorId}\n";
+                SendResponse(ns, end);
 
-            Console.WriteLine($"[Video] Batch enviado ({frames.Count} frames)");
+                string response = ReceiveMessage(ns);
+                Console.WriteLine("[VIDEO] Resposta do servidor: " + response);
+
+                if (response == "FRAMES_SAVED")
+                {
+                    Console.WriteLine("[VIDEO] Frames guardados com sucesso!");
+                }
+                else
+                {
+                    Console.WriteLine("[VIDEO] Erro ao guardar frames!");
+                }
+
+            }
         }
         catch (Exception ex)
         {
