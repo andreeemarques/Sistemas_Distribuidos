@@ -17,7 +17,8 @@ class Program
     {
         TcpListener server = new TcpListener(IPAddress.Any, 6000);
         server.Start();
-        Console.WriteLine("Servidor iniciado na porta 6000...");
+        Console.WriteLine("Servidor iniciado na porta 6000(DATA)...");
+
         Thread t1 = new Thread(() => ReceiveVideo(7001));
         t1.IsBackground = true;
         t1.Start();
@@ -93,8 +94,7 @@ class Program
                     mutex.ReleaseMutex();
                 }
 
-                byte[] resposta = Encoding.UTF8.GetBytes("DATA_STORED\n");
-                stream.Write(resposta, 0, resposta.Length);
+                SendResponse(stream, "DATA_STORED");
             }
         }
         catch (Exception e)
@@ -199,6 +199,7 @@ class Program
                     if (header.StartsWith("FRAMES_END"))
                     {
                         string sensorId = header.Split(';')[1];
+                        SendResponse(stream, "FRAME_SAVED");
                         Console.WriteLine($"[VIDEO] Todos os frames recebidos para sensor {sensorId}.");
                         break;
                     }
@@ -219,7 +220,6 @@ class Program
 
                     Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
                 }
-                SendResponse(stream, "FRAME_SAVED");
             }
         }
         catch (Exception e)
