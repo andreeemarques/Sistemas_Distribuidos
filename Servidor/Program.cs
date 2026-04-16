@@ -37,6 +37,12 @@ class Program
         return Encoding.UTF8.GetString(buffer, 0, bytesRead);
     }
 
+    static void SendResponse(NetworkStream stream, string message)
+    {
+        byte[] resp = Encoding.UTF8.GetBytes(message);
+        stream.Write(resp, 0, resp.Length);
+    }
+
     static void HandleClient(TcpClient client)
     {
         try
@@ -52,8 +58,6 @@ class Program
                 string[] parts = header.Split(';');
                 int frameId = int.Parse(parts[1]);
                 int size = int.Parse(parts[2]);
-
-                Console.WriteLine("Chega aqui");
 
                 byte[] frame = new byte[size];
                 int total = 0;
@@ -195,7 +199,7 @@ class Program
                     if (header.StartsWith("FRAMES_END"))
                     {
                         string sensorId = header.Split(';')[1];
-                        Console.WriteLine($"[VIDEO] Batch concluído para sensor {sensorId}.");
+                        Console.WriteLine($"[VIDEO] Todos os frames recebidos para sensor {sensorId}.");
                         break;
                     }
 
@@ -215,6 +219,7 @@ class Program
 
                     Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
                 }
+                SendResponse(stream, "FRAME_SAVED");
             }
         }
         catch (Exception e)
