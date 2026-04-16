@@ -17,7 +17,7 @@ class Program
     {
         TcpListener server = new TcpListener(IPAddress.Any, 6000);
         server.Start();
-        Console.WriteLine("Servidor iniciado na porta 6000(DATA)...");
+        Console.WriteLine("[DATA] Servidor iniciado na porta 6000...");
 
         Thread t1 = new Thread(() => ReceiveVideo(7001));
         t1.IsBackground = true;
@@ -52,8 +52,6 @@ class Program
 
             string header = ReceiveMessage(stream);
 
-            Console.WriteLine("Recebido: " + header);
-
             if (header.StartsWith("FRAME"))
             {
                 string[] parts = header.Split(';');
@@ -72,7 +70,7 @@ class Program
                 Directory.CreateDirectory("frames");
                 File.WriteAllBytes($"frames/frame_{frameId}.jpg", frame);
 
-                Console.WriteLine($"Frame {frameId} guardado!");
+                //Console.WriteLine($"Frame {frameId} guardado!");
 
                 byte[] resposta = Encoding.UTF8.GetBytes("OK\n");
                 stream.Write(resposta, 0, resposta.Length);
@@ -85,7 +83,7 @@ class Program
                 try
                 {
                     File.AppendAllText("dados_recebidos.txt", data + Environment.NewLine);
-                    Console.WriteLine("Dados guardados!");
+                    Console.WriteLine("[DATA] Dado guardado!");
 
                     ProcessarFicheiro();
                 }
@@ -145,12 +143,12 @@ class Program
                             db.SaveChanges();
                         }
 
-                        Console.WriteLine("Inserido na BD!");
+                        Console.WriteLine("[DATA] Inserido na BD!");
                         File.WriteAllText("dados_recebidos.txt", "");
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine("Erro linha: " + e.Message);
+                        Console.WriteLine("[DATA] Erro linha: " + e.Message);
                     }
                 }
             }
@@ -172,7 +170,7 @@ class Program
         TcpListener server = new TcpListener(IPAddress.Any, porta);
         server.Start();
 
-        Console.WriteLine("Servidor à escuta");
+        Console.WriteLine("[VIDEO] Servidor à escuta");
 
         while (true)
         {
@@ -199,7 +197,7 @@ class Program
                     if (header.StartsWith("FRAMES_END"))
                     {
                         string sensorId = header.Split(';')[1];
-                        SendResponse(stream, "FRAME_SAVED");
+                        SendResponse(stream, "FRAMES_SAVED");
                         Console.WriteLine($"[VIDEO] Todos os frames recebidos para sensor {sensorId}.");
                         break;
                     }
@@ -218,7 +216,7 @@ class Program
                     Directory.CreateDirectory(pasta);
                     File.WriteAllBytes($"{pasta}/frame_{frameId}.jpg", frame);
 
-                    Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
+                    //Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
                 }
             }
         }

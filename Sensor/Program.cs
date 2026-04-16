@@ -90,7 +90,7 @@ namespace Sensor
             DateTime ultimoHeartbeat = DateTime.Now;
             int cont = 0;
 
-            while (true && cont <= 2)
+            while (true && cont <= 4)
             {
                 if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 2)
                 {
@@ -147,7 +147,7 @@ namespace Sensor
                     }
                 }
                 cont++;
-                Thread.Sleep(60000);
+                Thread.Sleep(120000);
             }
 
             Send(stream, "DISCONNECT");
