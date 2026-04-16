@@ -119,7 +119,6 @@ namespace Sensor
                     if (string.Compare(conf_tipos, "TYPES_OK") == 0)
                     {
                         Console.WriteLine("[DATA] Tipos registados -> " + conf_tipos);
-                        Console.WriteLine($"[DATA] Parâmetros activos ({numParametros}): {tiposMsg}");
                     }
                     else
                     {
