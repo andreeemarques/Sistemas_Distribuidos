@@ -51,49 +51,23 @@ class Program
             NetworkStream stream = client.GetStream();
 
             string header = ReceiveMessage(stream);
+            string data = header;
 
-            if (header.StartsWith("FRAME"))
+            mutex.WaitOne();
+            try
             {
-                string[] parts = header.Split(';');
-                int frameId = int.Parse(parts[1]);
-                int size = int.Parse(parts[2]);
+                File.AppendAllText("dados_recebidos.txt", data + Environment.NewLine);
+                Console.WriteLine("[DATA] Dado guardado!");
 
-                byte[] frame = new byte[size];
-                int total = 0;
-
-                while (total < size)
-                {
-                    int lidos = stream.Read(frame, total, size - total);
-                    total += lidos;
-                }
-
-                Directory.CreateDirectory("frames");
-                File.WriteAllBytes($"frames/frame_{frameId}.jpg", frame);
-
-                //Console.WriteLine($"Frame {frameId} guardado!");
-
-                byte[] resposta = Encoding.UTF8.GetBytes("OK\n");
-                stream.Write(resposta, 0, resposta.Length);
+                ProcessarFicheiro();
             }
-            else
+            finally
             {
-                string data = header;
-
-                mutex.WaitOne();
-                try
-                {
-                    File.AppendAllText("dados_recebidos.txt", data + Environment.NewLine);
-                    Console.WriteLine("[DATA] Dado guardado!");
-
-                    ProcessarFicheiro();
-                }
-                finally
-                {
-                    mutex.ReleaseMutex();
-                }
-
-                SendResponse(stream, "DATA_STORED");
+                mutex.ReleaseMutex();
             }
+
+            SendResponse(stream, "DATA_STORED");
+            
         }
         catch (Exception e)
         {
@@ -216,7 +190,7 @@ class Program
                     Directory.CreateDirectory(pasta);
                     File.WriteAllBytes($"{pasta}/frame_{frameId}.jpg", frame);
 
-                    //Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
+                    Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
                 }
             }
         }

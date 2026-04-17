@@ -352,24 +352,23 @@ class Gateway
             Thread.Sleep(intervalSeconds * 1000);
 
             string[] files = Directory.GetFiles("Data", "*.txt");
-            if (files != null)
+
+            foreach (string file in files)
             {
-                Console.WriteLine("[DATA] A enviar dados ao servidor...");
-
-                foreach (string file in files)
+                Mutex m = GetFileMutex(file);
+                m.WaitOne();
+                string[] lines;
+                try
                 {
-                    Mutex m = GetFileMutex(file);
-                    m.WaitOne();
-                    string[] lines;
-                    try
-                    {
-                        lines = File.ReadAllLines(file);
-                    }
-                    finally
-                    {
-                        m.ReleaseMutex();
-                    }
-
+                   lines = File.ReadAllLines(file);
+                }
+                finally
+                {
+                   m.ReleaseMutex();
+                }
+                if (lines != null)
+                {
+                    Console.WriteLine("[DATA] A enviar dados ao servidor...");
                     List<string> falhas = new List<string>();
 
                     foreach (string line in lines)
@@ -396,9 +395,9 @@ class Gateway
                         m.ReleaseMutex();
                     }
                 }
-
-                Console.WriteLine("[DATA] Envio concluído.");
             }
+            Console.WriteLine("[DATA] Envio concluído.");
+            
         }
     }
 
@@ -457,7 +456,6 @@ class Gateway
             Console.WriteLine("[HB_Check] Verificação concluída.");
         }
     }
-
 
     static List<byte[]> frameBuffer = new List<byte[]>();
     static Mutex bufferMutex = new Mutex();
@@ -585,7 +583,6 @@ class Gateway
         }
 
     }
-
     static void SendVideo(List<byte[]> frames, string sensorId)
     {
         try
