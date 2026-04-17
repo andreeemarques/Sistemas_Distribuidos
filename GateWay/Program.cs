@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Threading;
 
@@ -109,7 +110,7 @@ class Gateway
         }
     }
 
-    static bool SensorExists(string sensorId)
+    static bool DATASensorExists(string sensorId)
     {
         string path = "Data/sensores.csv";
 
@@ -134,13 +135,13 @@ class Gateway
                 if (parts[0] == sensorId)
                 {
                     // Sensor já está ativo
-                    if (parts[1] == "ATIVO")
+                    if (parts[1] == "DATA_ATIVO")
                         return true;
 
                     // Sensor existe mas está inativo
-                    if (parts[1] == "INATIVO")
+                    if (parts[1] == "DESLIGADO" || parts[1]=="DATA_INATIVO")
                     {
-                        parts[1] = "ATIVO";
+                        parts[1] = "DATA_ATIVO";
                         lines[i] = string.Join(";", parts);
 
                         File.WriteAllLines(path, lines);
@@ -151,10 +152,58 @@ class Gateway
             }
 
             // Sensor não existe → adicionar nova linha
-            string novaLinha = $"{sensorId};ATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
+            string novaLinha = $"{sensorId};DATA_ATIVO;VIDEO_INATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
 
             File.AppendAllText(path, novaLinha + Environment.NewLine);
 
+            return false;
+        }
+        finally
+        {
+            m.ReleaseMutex();
+        }
+    }
+
+    static bool VIDEOSensorExists(string sensorId)
+    {
+        string path = "Data/sensores.csv";
+
+        Mutex m = GetFileMutex(path);
+        m.WaitOne();
+
+        try
+        {
+            // Se ficheiro não existir, cria-o
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory("Data");
+                File.WriteAllText(path, "");
+            }
+
+            var lines = File.ReadAllLines(path);
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var parts = lines[i].Split(';');
+
+                if (parts[0] == sensorId)
+                {
+                    // Sensor já está ativo
+                    if (parts[2] == "VIDEO_ATIVO")
+                        return true;
+
+                    // Sensor existe mas está inativo
+                    if (parts[2] == "VIDEO_INATIVO")
+                    {
+                        parts[2] = "VIDEO_ATIVO";
+                        lines[i] = string.Join(";", parts);
+
+                        File.WriteAllLines(path, lines);
+
+                        return false;
+                    }
+                }
+            }
             return false;
         }
         finally
@@ -186,8 +235,22 @@ class Gateway
                     var parts = lines[i].Split(';');
                     if (parts[0] == sensorId)
                     {
-                        parts[1] = "INATIVO";
-                        parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        parts[1] = "DESLIGADO";
+                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        lines[i] = string.Join(";", parts);
+                        found = true;
+                    }
+                }
+            }
+            else if (mensagem == "VIDEO_END")
+            {
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split(';');
+                    if (parts[0] == sensorId)
+                    {
+                        parts[2] = "VIDEO_INATIVO";
+                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
                         lines[i] = string.Join(";", parts);
                         found = true;
                     }
@@ -199,7 +262,8 @@ class Gateway
                     var parts = lines[i].Split(';');
                     if (parts[0] == sensorId)
                     {
-                        parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        parts[1] = "DATA_ATIVO";
                         lines[i] = string.Join(";", parts);
                         found = true;
                     }
@@ -230,6 +294,7 @@ class Gateway
             while (true)
             {
                 string message = ReceiveMessage(stream);
+                Console.Write(message + "\n");
 
                 if (message.StartsWith("HELLO"))
                 {
@@ -237,7 +302,7 @@ class Gateway
 
                     sensorId = parts[1];
 
-                    if (SensorExists(sensorId))
+                    if (DATASensorExists(sensorId))
                     {
                         SendResponse(stream, "ERROR:SENSOR_IS_ACTIVE");
                         continue;
@@ -353,9 +418,7 @@ class Gateway
 
             string[] files = Directory.GetFiles("Data", "*.txt");
             if (files != null)
-            {
-                Console.WriteLine("[DATA] A enviar dados ao servidor...");
-
+            {              
                 foreach (string file in files)
                 {
                     Mutex m = GetFileMutex(file);
@@ -370,34 +433,37 @@ class Gateway
                         m.ReleaseMutex();
                     }
 
-                    List<string> falhas = new List<string>();
-
-                    foreach (string line in lines)
+                    if(lines.Length > 0)
                     {
-                        if (!string.IsNullOrWhiteSpace(line))
+                        Console.WriteLine($"[DATA] A enviar dados de {file} ao servidor...");
+                        List<string> falhas = new List<string>();
+
+                        foreach (string line in lines)
                         {
-                            bool sucesso = SendToServer(line);
-                            if (!sucesso)
-                                falhas.Add(line); // guarda as linhas que falharam
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                bool sucesso = SendToServer(line);
+                                if (!sucesso)
+                                    falhas.Add(line); // guarda as linhas que falharam
+                            }
                         }
-                    }
 
-                    // Reescreve o ficheiro apenas com as linhas que falharam
-                    m.WaitOne();
-                    try
-                    {
-                        if (falhas.Count == 0)
-                            File.WriteAllText(file, "");
-                        else
-                            File.WriteAllLines(file, falhas);
-                    }
-                    finally
-                    {
-                        m.ReleaseMutex();
+                        // Reescreve o ficheiro apenas com as linhas que falharam
+                        m.WaitOne();
+                        try
+                        {
+                            if (falhas.Count == 0)
+                                File.WriteAllText(file, "");
+                            else
+                                File.WriteAllLines(file, falhas);
+                        }
+                        finally
+                        {
+                            m.ReleaseMutex();
+                        }
+                        Console.WriteLine("[DATA] Envio concluído.");
                     }
                 }
-
-                Console.WriteLine("[DATA] Envio concluído.");
             }
         }
     }
@@ -411,36 +477,44 @@ class Gateway
             Console.WriteLine("[HB_Check] A verificar sensores...");
 
             string path = "Data/sensores.csv";
+
+            if (!File.Exists(path))
+                return;
+
             Mutex m = GetFileMutex(path);
             m.WaitOne();
             try
             {
-                if (!File.Exists(path)) return;
 
                 var lines = File.ReadAllLines(path);
                 bool alterado = false;
 
+
                 for (int i = 0; i < lines.Length; i++)
                 {
                     var parts = lines[i].Split(';');
-                    if (parts.Length < 3)
+                    if (parts.Length < 4)
                         continue;
 
                     string sensorId = parts[0];
                     string estado = parts[1];
-                    string timestamp = parts[2];
-
-                    // Só verifica sensores ativos
-                    if (estado != "ATIVO")
-                        continue;
+                    string timestamp = parts[3];
 
                     DateTime lastSeen = DateTime.Parse(timestamp);
                     double segundos = (DateTime.Now - lastSeen).TotalSeconds;
 
-                    if (segundos > timeoutSeconds)
+                    if (segundos > timeoutSeconds && estado == "DATA_ATIVO")
                     {
                         Console.WriteLine($"[HB_Check] Sensor '{sensorId}' inativo por timeout ({segundos:F0}s).");
-                        parts[1] = "INATIVO";
+                        parts[1] = "DATA_INATIVO";
+                        lines[i] = string.Join(";", parts);
+                        alterado = true;
+                    }
+
+                    if(segundos > (timeoutSeconds * 2) && estado == "DATA_INATIVO")
+                    {
+                        Console.WriteLine($"[HB_Check] Sensor '{sensorId}' desligado por timeout ({segundos:F0}s).");
+                        parts[1] = "DESLIGADO";
                         lines[i] = string.Join(";", parts);
                         alterado = true;
                     }
@@ -484,6 +558,13 @@ class Gateway
                 {
                     string[] parts = text.Split(';');
                     string sensorId = parts[1];
+                    
+                    if (VIDEOSensorExists(sensorId))
+                    {
+                        byte[] resp = Encoding.UTF8.GetBytes("ERROR:SENSOR_VIDEO_IS_ACTIVE");
+                        udpServer.Send(resp, resp.Length, sensorEndpoint);
+                        continue;
+                    }
 
                     videoMutex.WaitOne();
                     try
@@ -502,6 +583,7 @@ class Gateway
 
                             byte[] resp = Encoding.UTF8.GetBytes("VIDEO_WAIT");
                             udpServer.Send(resp, resp.Length, sensorEndpoint);
+                            UpdateSensor(sensorId, "VIDEO_END");
                         }
                     }
                     finally
@@ -515,6 +597,7 @@ class Gateway
                 {
                     string[] parts = text.Split(';');
                     string sensorId = parts[1];
+                    UpdateSensor(sensorId, "VIDEO_END");
 
                     videoMutex.WaitOne();
                     try

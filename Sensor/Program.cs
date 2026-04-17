@@ -66,7 +66,7 @@ namespace Sensor
                 Thread dataThread = new Thread(() => Data(id, "127.0.0.1", 5000));
                 dataThread.Start();
 
-                Thread.Sleep(240000);
+                Thread.Sleep(420000);
             }
         }
 
@@ -90,70 +90,85 @@ namespace Sensor
             DateTime ultimoHeartbeat = DateTime.Now;
             int cont = 0;
 
-            while (true && cont <= 4)
+            try
             {
-                if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 2)
+                while (true && cont <= 3)
                 {
-                    Send(stream, $"HEARTBEAT;{sensorId}");
-                    Console.WriteLine("[DATA] Heartbeat -> " + Receive(stream));
-
-                    ultimoHeartbeat = DateTime.Now;
-                }
-                else
-                {
-                    int numParametros = rnd.Next(2, Parametros.Count + 1);
-
-                    List<string> parametrosSelecionados = new List<string>(Parametros);
-                    for (int i = parametrosSelecionados.Count - 1; i > 0; i--)
+                    if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 4)
                     {
-                        int j = rnd.Next(i + 1);
-                        (parametrosSelecionados[i], parametrosSelecionados[j]) =
-                            (parametrosSelecionados[j], parametrosSelecionados[i]);
-                    }
-                    parametrosSelecionados = parametrosSelecionados.GetRange(0, numParametros);
+                        Send(stream, $"HEARTBEAT;{sensorId}");
+                        Console.WriteLine("[HEARTBEAT] Heartbeat -> " + Receive(stream));
 
-                    string tiposMsg = string.Join(";", parametrosSelecionados);
-                    Send(stream, tiposMsg);
-                    string conf_tipos = Receive(stream);
-
-                    if (string.Compare(conf_tipos, "TYPES_OK") == 0)
-                    {
-                        Console.WriteLine("[DATA] Tipos registados -> " + conf_tipos);
+                        ultimoHeartbeat = DateTime.Now;
                     }
                     else
                     {
-                        Console.WriteLine($"[DATA] Erro:{conf_tipos}");
-                        break;
-                    }
+                        int numParametros = rnd.Next(2, Parametros.Count + 1);
 
-                    string zona = Zonas[rnd.Next(Zonas.Count)];
-                    string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        List<string> parametrosSelecionados = new List<string>(Parametros);
+                        for (int i = parametrosSelecionados.Count - 1; i > 0; i--)
+                        {
+                            int j = rnd.Next(i + 1);
+                            (parametrosSelecionados[i], parametrosSelecionados[j]) =
+                                (parametrosSelecionados[j], parametrosSelecionados[i]);
+                        }
+                        parametrosSelecionados = parametrosSelecionados.GetRange(0, numParametros);
 
-                    foreach (string parametro in parametrosSelecionados)
-                    {
-                        int valor = GerarValor(parametro, rnd);
-                        string msg = $"{timestamp};{sensorId};{zona};{parametro};{valor}";
+                        string tiposMsg = string.Join(";", parametrosSelecionados);
+                        Send(stream, tiposMsg);
+                        string conf_tipos = Receive(stream);
 
-                        Send(stream, msg);
-                        string confirmacao = Receive(stream);
-
-                        if (string.Compare(confirmacao, "DATA_RECEIVED") == 0)
-                            Console.WriteLine($"[DATA] {parametro}={valor} - DATA_RECEIVED");
+                        if (string.Compare(conf_tipos, "TYPES_OK") == 0)
+                        {
+                            Console.WriteLine("[DATA] Tipos registados -> " + conf_tipos);
+                        }
                         else
                         {
-                            Console.WriteLine($"[DATA] Erro:{confirmacao} - {parametro}");
+                            Console.WriteLine($"[DATA] Erro:{conf_tipos}");
                             break;
                         }
+
+                        string zona = Zonas[rnd.Next(Zonas.Count)];
+                        string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+
+                        foreach (string parametro in parametrosSelecionados)
+                        {
+                            int valor = GerarValor(parametro, rnd);
+                            string msg = $"{timestamp};{sensorId};{zona};{parametro};{valor}";
+
+                            Send(stream, msg);
+                            string confirmacao = Receive(stream);
+
+                            if (string.Compare(confirmacao, "DATA_RECEIVED") == 0)
+                                Console.WriteLine($"[DATA] {parametro}={valor} - DATA_RECEIVED");
+                            else
+                            {
+                                Console.WriteLine($"[DATA] Erro:{confirmacao} - {parametro}");
+                                break;
+                            }
+                        }
+                    }
+                    cont++;
+                    if(cont<=3)
+                    {
+                        Thread.Sleep(120000);
                     }
                 }
-                cont++;
-                Thread.Sleep(120000);
             }
-
-            Send(stream, "DISCONNECT");
-            Console.WriteLine("[DATA] " + Receive(stream));
-            cont = 0;
-            client.Close();
+            finally
+            {
+                try
+                {
+                    Send(stream, "DISCONNECT");
+                    Console.WriteLine("[DATA] " + Receive(stream));
+                    cont = 0;
+                    client.Close();
+                }
+                catch 
+                {
+                    Console.WriteLine("[DATA] Falha ao enviar DISCONNECT");
+                }
+            }
         }
 
         static void Send(NetworkStream stream, string msg)
@@ -192,11 +207,14 @@ namespace Sensor
                         _canStream = true;
                         break;
                     }
-                    else
+                    else if (response != null && response.StartsWith("VIDEO_WAIT"))
                     {
                         Console.WriteLine("[VIDEO] Em espera...");
-
                         Thread.Sleep(retryDelay);
+                    }
+                    else
+                    {
+                        Console.WriteLine("[VIDEO] Erro: " + response);
                     }
                 }
 
