@@ -401,7 +401,10 @@ class Gateway
             Console.WriteLine("Servidor respondeu: " + response);
 
             serverClient.Close();
-            return true;
+            if (response == "DATA_STORED")
+                return true;
+            else
+                return false;
         }
         catch
         {
