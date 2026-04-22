@@ -52,37 +52,10 @@ class Program
 
             string header = ReceiveMessage(stream);
 
-            if (header.StartsWith("FRAME"))
-            {
-                string[] parts = header.Split(';');
-                int frameId = int.Parse(parts[1]);
-                int size = int.Parse(parts[2]);
-
-                byte[] frame = new byte[size];
-                int total = 0;
-
-                while (total < size)
-                {
-                    int lidos = stream.Read(frame, total, size - total);
-                    total += lidos;
-                }
-
-                Directory.CreateDirectory("frames");
-                File.WriteAllBytes($"frames/frame_{frameId}.jpg", frame);
-
-                //Console.WriteLine($"Frame {frameId} guardado!");
-
-                byte[] resposta = Encoding.UTF8.GetBytes("OK\n");
-                stream.Write(resposta, 0, resposta.Length);
-            }
-            else
-            {
-                string data = header;
-
                 mutex.WaitOne();
                 try
                 {
-                    File.AppendAllText("dados_recebidos.txt", data + Environment.NewLine);
+                    File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
                     Console.WriteLine("[DATA] Dado guardado!");
 
                     ProcessarFicheiro();
@@ -93,7 +66,6 @@ class Program
                 }
 
                 SendResponse(stream, "DATA_STORED");
-            }
         }
         catch (Exception e)
         {

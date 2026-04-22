@@ -92,7 +92,7 @@ namespace Sensor
 
             try
             {
-                while (true && cont <= 3)
+                while (cont <= 3)
                 {
                     if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 4)
                     {
