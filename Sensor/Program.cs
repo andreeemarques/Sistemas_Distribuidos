@@ -72,102 +72,10 @@ namespace Sensor
 
         static void Data(string sensorId, string gatewayIp, int porta)
         {
-            TcpClient client = new TcpClient(gatewayIp, porta);
-            var stream = client.GetStream();
-
-            Send(stream, $"HELLO;{sensorId}");
-            string resposta = Receive(stream);
-
-            if (string.Compare(resposta, "OK") != 0)
-            {
-                Console.WriteLine("[DATA] Erro na ligação: " + resposta);
-                return;
-            }
-
-            Console.WriteLine("[DATA] Ligado ao Gateway!");
-
-            Random rnd = new Random();
-            DateTime ultimoHeartbeat = DateTime.Now;
-            int cont = 0;
-
-            while (true && cont <= 4)
-            {
-                if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 2)
-                {
-                    Send(stream, $"HEARTBEAT;{sensorId}");
-                    Console.WriteLine("[DATA] Heartbeat -> " + Receive(stream));
-
-                    ultimoHeartbeat = DateTime.Now;
-                }
-                else
-                {
-                    int numParametros = rnd.Next(2, Parametros.Count + 1);
-
-                    List<string> parametrosSelecionados = new List<string>(Parametros);
-                    for (int i = parametrosSelecionados.Count - 1; i > 0; i--)
-                    {
-                        int j = rnd.Next(i + 1);
-                        (parametrosSelecionados[i], parametrosSelecionados[j]) =
-                            (parametrosSelecionados[j], parametrosSelecionados[i]);
-                    }
-                    parametrosSelecionados = parametrosSelecionados.GetRange(0, numParametros);
-
-                    string tiposMsg = string.Join(";", parametrosSelecionados);
-                    Send(stream, tiposMsg);
-                    string conf_tipos = Receive(stream);
-
-                    if (string.Compare(conf_tipos, "TYPES_OK") == 0)
-                    {
-                        Console.WriteLine("[DATA] Tipos registados -> " + conf_tipos);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[DATA] Erro:{conf_tipos}");
-                        break;
-                    }
-
-                    string zona = Zonas[rnd.Next(Zonas.Count)];
-                    string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-
-                    foreach (string parametro in parametrosSelecionados)
-                    {
-                        int valor = GerarValor(parametro, rnd);
-                        string msg = $"{timestamp};{sensorId};{zona};{parametro};{valor}";
-
-                        Send(stream, msg);
-                        string confirmacao = Receive(stream);
-
-                        if (string.Compare(confirmacao, "DATA_RECEIVED") == 0)
-                            Console.WriteLine($"[DATA] {parametro}={valor} - DATA_RECEIVED");
-                        else
-                        {
-                            Console.WriteLine($"[DATA] Erro:{confirmacao} - {parametro}");
-                            break;
-                        }
-                    }
-                }
-                cont++;
-                Thread.Sleep(120000);
-            }
-
-            Send(stream, "DISCONNECT");
-            Console.WriteLine("[DATA] " + Receive(stream));
-            cont = 0;
-            client.Close();
+           
         }
 
-        static void Send(NetworkStream stream, string msg)
-        {
-            byte[] data = Encoding.UTF8.GetBytes(msg);
-            stream.Write(data, 0, data.Length);
-        }
-
-        static string Receive(NetworkStream stream)
-        {
-            byte[] buffer = new byte[1024];
-            int bytesRead = stream.Read(buffer, 0, buffer.Length);
-            return Encoding.UTF8.GetString(buffer, 0, bytesRead);
-        }
+        // VIDEO
 
         static volatile bool _videoRunning = false;
         static volatile bool _canStream = false;
