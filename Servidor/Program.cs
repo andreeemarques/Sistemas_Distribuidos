@@ -12,6 +12,7 @@ using System.Threading;
 class Program
 {
     static Mutex mutex = new Mutex();
+    static AnalysisClient analysisClient = new AnalysisClient(); // NOVO
 
     static void Main()
     {
@@ -52,20 +53,20 @@ class Program
 
             string header = ReceiveMessage(stream);
 
-                mutex.WaitOne();
-                try
-                {
-                    File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
-                    Console.WriteLine("[DATA] Dado guardado!");
+            mutex.WaitOne();
+            try
+            {
+                File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
+                Console.WriteLine("[DATA] Dado guardado!");
 
-                    ProcessarFicheiro();
-                }
-                finally
-                {
-                    mutex.ReleaseMutex();
-                }
+                ProcessarFicheiro();
+            }
+            finally
+            {
+                mutex.ReleaseMutex();
+            }
 
-                SendResponse(stream, "DATA_STORED");
+            SendResponse(stream, "DATA_STORED");
         }
         catch (Exception e)
         {
@@ -86,6 +87,8 @@ class Program
 
                 foreach (var linha in linhas)
                 {
+                    if (string.IsNullOrWhiteSpace(linha)) continue;
+
                     try
                     {
                         string[] partes = linha.Split(';');
@@ -116,6 +119,9 @@ class Program
                         }
 
                         Console.WriteLine("[DATA] Inserido na BD!");
+
+                        AnalisarDados(idSensor, tipo, valor); // NOVO
+
                         File.WriteAllText("dados_recebidos.txt", "");
                     }
                     catch (Exception e)
@@ -137,17 +143,41 @@ class Program
         Thread.Sleep(5000);
     }
 
+    // NOVO — Invocar serviço de análise via RPC
+    static void AnalisarDados(string idSensor, string tipo, double valor)
+    {
+        try
+        {
+            var valores = new List<double> { valor };
+
+            // Análise estatística
+            analysisClient.GetStatistics(idSensor, tipo, valores);
+
+            // Deteção de padrões de poluição
+            var anomalia = analysisClient.DetectAnomalies(idSensor, tipo, valores);
+            if (anomalia != null && anomalia.AnomaliaDetetada)
+                Console.WriteLine($"[RPC] Poluição detetada no sensor {idSensor}: {anomalia.Descricao}");
+
+            // Previsão de riscos para a saúde pública
+            var risco = analysisClient.PredictHealthRisk(idSensor, new List<string> { tipo }, valores);
+            if (risco != null)
+                Console.WriteLine($"[RPC] Risco saúde pública: {risco.NivelRisco} — {risco.Descricao}");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[RPC] Erro análise: " + e.Message);
+        }
+    }
+
     static void ReceiveVideo(int porta)
     {
         TcpListener server = new TcpListener(IPAddress.Any, porta);
         server.Start();
-
         Console.WriteLine("[VIDEO] Servidor à escuta");
 
         while (true)
         {
             TcpClient client = server.AcceptTcpClient();
-
             Thread t = new Thread(() => HandleVideoClient(client));
             t.IsBackground = true;
             t.Start();
@@ -165,7 +195,6 @@ class Program
                     string header = ReadLine(stream);
                     if (string.IsNullOrEmpty(header)) break;
 
-                    // FRAMES_END;sensorId
                     if (header.StartsWith("FRAMES_END"))
                     {
                         string sensorId = header.Split(';')[1];
@@ -174,7 +203,6 @@ class Program
                         break;
                     }
 
-                    // FRAME;sensorId;frameId;size
                     string[] parts = header.Split(';');
                     if (parts.Length < 4 || parts[0] != "FRAME") break;
 
@@ -187,8 +215,6 @@ class Program
                     string pasta = $"frames/{sensor}";
                     Directory.CreateDirectory(pasta);
                     File.WriteAllBytes($"{pasta}/frame_{frameId}.jpg", frame);
-
-                    //Console.WriteLine($"[VIDEO] Sensor {sensor} — frame {frameId} guardado ({size} bytes)");
                 }
             }
         }
@@ -210,12 +236,8 @@ class Program
         while (true)
         {
             int read = stream.Read(temp, 0, 1);
-            if (read == 0)
-                return null;
-
-            if (temp[0] == '\n')
-                break;
-
+            if (read == 0) return null;
+            if (temp[0] == '\n') break;
             buffer.Add(temp[0]);
         }
 
@@ -230,10 +252,7 @@ class Program
         while (total < size)
         {
             int read = stream.Read(buffer, total, size - total);
-
-            if (read == 0)
-                throw new Exception("Ligação fechada antes de completar frame");
-
+            if (read == 0) throw new Exception("Ligação fechada antes de completar frame");
             total += read;
         }
 
