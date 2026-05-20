@@ -7,6 +7,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using Grpc.Net.Client;
+using Preprocessing;
 
 class Gateway
 {
@@ -260,18 +262,31 @@ class Gateway
                 // formato: timestamp;id;zona;tipo;valor
                 else if (message.Split(';').Length == 5 && message.StartsWith("2"))
                 {
-                    string tipo = message.Split(';')[3];
+                    string[] parts = message.Split(';');
+                    string tipo = parts[3];
 
                     if (!Parametros.Contains(tipo))
                     {
-                        Console.WriteLine($"Tipo de dado inválido: {tipo}");
+                        Console.WriteLine($"Tipo de dado invalido: {tipo}");
                         SendResponse(stream, $"ERROR:INVALID_TYPE:{tipo}");
                         continue;
                     }
 
-                    Console.WriteLine("[DATA] Dados recebidos: " + message);
+                    // Chamar o serviço RPC de pré-processamento
+                    var (valid, normalizedValue, unit) = CallPreProcessing(message);
 
-                    SaveData(message);
+                    if (!valid)
+                    {
+                        Console.WriteLine($"[RPC] Dado rejeitado pelo pre-processamento.");
+                        SendResponse(stream, "ERROR:PREPROCESS_FAILED");
+                        continue;
+                    }
+
+                    // Reconstruir mensagem com o valor normalizado
+                    string processedMessage = $"{parts[0]};{parts[1]};{parts[2]};{parts[3]};{normalizedValue}";
+                    Console.WriteLine($"[RPC] Dado normalizado: {processedMessage} ({unit})");
+
+                    SaveData(processedMessage);
                     UpdateSensor(sensorId, null);
 
                     SendResponse(stream, "DATA_RECEIVED");
@@ -636,6 +651,41 @@ class Gateway
         finally
         {
             bufferMutex.ReleaseMutex();
+        }
+    }
+
+    static (bool valid, string normalizedValue, string unit) CallPreProcessing(string message)
+    {
+        string[] parts = message.Split(';');
+
+        try
+        {
+            // WinHttpHandler necessário para HTTP/2 no .NET Framework
+            var handler = new System.Net.Http.WinHttpHandler();
+
+            var channel = GrpcChannel.ForAddress("http://localhost:50051",
+                new GrpcChannelOptions { HttpHandler = handler });
+
+            var client = new PreProcessingService.PreProcessingServiceClient(channel);
+
+            var response = client.ProcessData(new SensorData
+            {
+                Timestamp = parts[0],
+                SensorId = parts[1],
+                Zone = parts[2],
+                Type = parts[3],
+                Value = parts[4]
+            });
+
+            channel.Dispose();
+
+            return (response.Valid, response.NormalizedValue, response.Unit);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[RPC] Erro ao contactar pre-processamento: {ex.Message}");
+            // Fallback: aceita o dado original se o servico estiver em baixo
+            return (true, parts[4], "");
         }
     }
 }
