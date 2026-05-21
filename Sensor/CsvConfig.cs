@@ -9,7 +9,8 @@ namespace Sensor
 {
     internal class CsvConfig
     {
-        private static readonly string Caminho = "sensores.csv";
+        private static readonly string Caminho =
+            Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,@"..\..\sensores.csv"));
         private static readonly string Cabecalho = "id,zona,parametros";
 
         public static List<SensorConfig> LerTodos()
@@ -53,26 +54,21 @@ namespace Sensor
 
         private static SensorConfig ParseLinha(string linha)
         {
-            // split simples que respeita campos entre aspas
             var partes = new List<string>();
             bool dentroAspas = false;
-            var atual = new System.Text.StringBuilder();
+            var atual = new StringBuilder();
 
             foreach (char c in linha)
             {
                 if (c == '"')
-                {
                     dentroAspas = !dentroAspas;
-                }
                 else if (c == ',' && !dentroAspas)
                 {
                     partes.Add(atual.ToString());
                     atual.Clear();
                 }
                 else
-                {
                     atual.Append(c);
-                }
             }
             partes.Add(atual.ToString());
 
@@ -80,7 +76,8 @@ namespace Sensor
             {
                 Id = partes[0].Trim(),
                 Zona = partes[1].Trim(),
-                Parametros = partes[2].Trim().Split(',').Select(p => p.Trim()).ToList()
+                Parametros = partes[2].Trim().Split(',').Select(p => p.Trim()).ToList(),
+                Intervalo = partes.Count > 3 && int.TryParse(partes[3].Trim(), out int seg) ? seg : 5
             };
         }
     }

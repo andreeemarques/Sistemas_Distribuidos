@@ -11,5 +11,7 @@ namespace Sensor
         public string Id { get; set; }
         public string Zona { get; set; }
         public List<string> Parametros { get; set; }
+
+        public int Intervalo { get; set; } = 5;
     }
 }

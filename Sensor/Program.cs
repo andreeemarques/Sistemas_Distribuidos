@@ -53,27 +53,69 @@ namespace Sensor
 
         static void Main(string[] args)
         {
+            if (args.Length > 0)
+            {
+                string id = args[0];
+                var config = CsvConfig.LerPorId(id);
 
-            Console.Write("ID do Sensor: ");
-            string id = Console.ReadLine();
+                if (config == null)
+                {
+                    Console.WriteLine($"[ERRO] Sensor '{id}' não encontrado no CSV.");
+                    Console.ReadLine();
+                    return;
+                }
 
-            Thread videoThread = new Thread(() => StreamVideo(id, "127.0.0.1", 5001));
-            videoThread.IsBackground = true;
-            videoThread.Start();
+                CorrerSensor(config);
+                return;
+            }
+
+            var sensores = CsvConfig.LerTodos();
+
+            if (sensores.Count == 0)
+            {
+                Console.WriteLine("[AVISO] Nenhum sensor encontrado no CSV.");
+                return;
+            }
+
+            Console.WriteLine($"[INIT] {sensores.Count} sensor(es) carregado(s).\n");
+
+            var threads = new List<Thread>();
+
+            foreach (var config in sensores)
+            {
+                var cfg = config;
+                var t = new Thread(() => CorrerSensor(cfg));
+                t.Name = cfg.Id;
+                t.IsBackground = true;
+                threads.Add(t);
+                t.Start();
+            }
+
+            Console.WriteLine("Pressiona [Enter] para parar todos os sensores.");
+            Console.ReadLine();
+        }
+
+        static void CorrerSensor(SensorConfig config)
+        {
+            var rnd = new Random();
+
+            var pub = new Publisher();
+
+            Console.WriteLine($"[{config.Id}] Iniciado | Zona: {config.Zona} | " +
+                              $"Parâmetros: {string.Join(", ", config.Parametros)}");
 
             while (true)
             {
-                Thread dataThread = new Thread(() => Data(id, "127.0.0.1", 5000));
-                dataThread.Start();
+                foreach (var parametro in config.Parametros)
+                {
+                    int valor = GerarValor(parametro, rnd);
+                    pub.Publicar(config.Id, config.Zona, parametro, valor);
+                }
 
-                Thread.Sleep(240000);
+                Thread.Sleep(config.Intervalo * 1000);
             }
         }
 
-        static void Data(string sensorId, string gatewayIp, int porta)
-        {
-           
-        }
 
         // VIDEO
 
