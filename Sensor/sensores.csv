@@ -1,0 +1,4 @@
+﻿id,zona,parametros,intervalo
+sensor-01,ZONA_ESCOLAR,"TEMP,HUM,RUIDO,LUM",5
+sensor-02,ZONA_INDUSTRIAL,"AR,PM2.5,PM10,RUIDO",10
+sensor-03,ZONA_PARQUE,"TEMP,HUM,LUM",30

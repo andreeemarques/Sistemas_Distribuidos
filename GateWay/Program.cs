@@ -9,419 +9,388 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Threading;
 
-class Gateway
+namespace Gateway
 {
-    // Um mutex por ficheiro para garantir acesso sequencial
-    static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
-    static Mutex dictMutex = new Mutex();
-
-    static Mutex GetFileMutex(string path)
+    class Program
     {
-        dictMutex.WaitOne();
-        try
-        {
-            if (!fileMutexes.ContainsKey(path))
-                fileMutexes[path] = new Mutex();
-            return fileMutexes[path];
-        }
-        finally
-        {
-            dictMutex.ReleaseMutex();
-        }
-    }
+        // Um mutex por ficheiro para garantir acesso sequencial
+        static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
+        static Mutex dictMutex = new Mutex();
 
-    static readonly List<string> Parametros = new List<string>
+        static Mutex GetFileMutex(string path)
+        {
+            dictMutex.WaitOne();
+            try
+            {
+                if (!fileMutexes.ContainsKey(path))
+                    fileMutexes[path] = new Mutex();
+                return fileMutexes[path];
+            }
+            finally
+            {
+                dictMutex.ReleaseMutex();
+            }
+        }
+
+        static readonly List<string> Parametros = new List<string>
     {
         "TEMP", "HUM", "RUIDO", "AR", "PM2.5", "PM10", "LUM"
        };
 
-    static List<string> ValidarTipos(string[] tipos)
-    {
-        List<string> invalidos = new List<string>();
-        foreach (string tipo in tipos)
-            if (!Parametros.Contains(tipo))
-                invalidos.Add(tipo);
-        return invalidos;
-    }
-
-    static void Main()
-    {
-        int port = 5000;
-        TcpListener server = new TcpListener(IPAddress.Any, port);
-        server.Start();
-        Console.WriteLine("Gateway iniciado na porta " + port);
-
-        Thread senderThread = new Thread(() => DataSender(30));
-        senderThread.IsBackground = true;
-        senderThread.Start();
-
-        Thread watchdogThread = new Thread(() => Heatbeat_Check(120));
-        watchdogThread.IsBackground = true;
-        watchdogThread.Start();
-
-        Thread udpThread = new Thread(() => ReceiveVideo(5001));
-        udpThread.IsBackground = true;
-        udpThread.Start();
-
-        while (true)
+        static List<string> ValidarTipos(string[] tipos)
         {
-            TcpClient client = server.AcceptTcpClient();
-            Console.WriteLine("Sensor conectado!");
-
-            Thread t = new Thread(() => HandleClient(client));
-            t.IsBackground = true;
-            t.Start();
+            List<string> invalidos = new List<string>();
+            foreach (string tipo in tipos)
+                if (!Parametros.Contains(tipo))
+                    invalidos.Add(tipo);
+            return invalidos;
         }
-    }
 
-    static void SendResponse(NetworkStream stream, string message)
-    {
-        byte[] resp = Encoding.UTF8.GetBytes(message);
-        stream.Write(resp, 0, resp.Length);
-    }
-
-    static string ReceiveMessage(NetworkStream stream)
-    {
-        byte[] buffer = new byte[1024];
-        int bytesRead = stream.Read(buffer, 0, buffer.Length);
-        return Encoding.UTF8.GetString(buffer, 0, bytesRead);
-    }
-
-    static void SaveData(string message)
-    {
-        string[] parts = message.Split(';');
-
-        string tipo = parts[3];
-
-        string path = $"Data/{tipo}.txt";
-
-        // Garante acesso sequencial ao ficheiro
-        Mutex m = GetFileMutex(path);
-        m.WaitOne();
-        try
+        static void Main(string[] args)
         {
-            Directory.CreateDirectory("Data");
-
-            File.AppendAllText(path, message + Environment.NewLine);
-        }
-        finally
-        {
-            m.ReleaseMutex();
-        }
-    }
-
-    static bool DATASensorExists(string sensorId)
-    {
-        string path = "Data/sensores.csv";
-
-        Mutex m = GetFileMutex(path);
-        m.WaitOne();
-
-        try
-        {
-            // Se ficheiro não existir, cria-o
-            if (!File.Exists(path))
+            if (args.Length > 0)
             {
-                Directory.CreateDirectory("Data");
-                File.WriteAllText(path, "");
-            }
+                string id = args[0];
+                var config = CsvConfig.LerPorId(id);
 
-            var lines = File.ReadAllLines(path);
-
-            for (int i = 0; i < lines.Length; i++)
-            {
-                var parts = lines[i].Split(';');
-
-                if (parts[0] == sensorId)
+                if (config == null)
                 {
-                    // Sensor já está ativo
-                    if (parts[1] == "DATA_ATIVO")
-                        return true;
-
-                    // Sensor existe mas está inativo
-                    if (parts[1] == "DESLIGADO" || parts[1]=="DATA_INATIVO")
-                    {
-                        parts[1] = "DATA_ATIVO";
-                        lines[i] = string.Join(";", parts);
-
-                        File.WriteAllLines(path, lines);
-
-                        return false;
-                    }
+                    Console.WriteLine($"[ERRO] Gateway '{id}' não encontrada no CSV.");
+                    Console.ReadLine();
+                    return;
                 }
-            }
 
-            // Sensor não existe → adicionar nova linha
-            string novaLinha = $"{sensorId};DATA_ATIVO;VIDEO_INATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
-
-            File.AppendAllText(path, novaLinha + Environment.NewLine);
-
-            return false;
-        }
-        finally
-        {
-            m.ReleaseMutex();
-        }
-    }
-
-    static bool VIDEOSensorExists(string sensorId)
-    {
-        string path = "Data/sensores.csv";
-
-        Mutex m = GetFileMutex(path);
-        m.WaitOne();
-
-        try
-        {
-            // Se ficheiro não existir, cria-o
-            if (!File.Exists(path))
-            {
-                Directory.CreateDirectory("Data");
-                File.WriteAllText(path, "");
-            }
-
-            var lines = File.ReadAllLines(path);
-
-            for (int i = 0; i < lines.Length; i++)
-            {
-                var parts = lines[i].Split(';');
-
-                if (parts[0] == sensorId)
-                {
-                    // Sensor já está ativo
-                    if (parts[2] == "VIDEO_ATIVO")
-                        return true;
-
-                    // Sensor existe mas está inativo
-                    if (parts[2] == "VIDEO_INATIVO")
-                    {
-                        parts[2] = "VIDEO_ATIVO";
-                        lines[i] = string.Join(";", parts);
-
-                        File.WriteAllLines(path, lines);
-
-                        return false;
-                    }
-                }
-            }
-            return false;
-        }
-        finally
-        {
-            m.ReleaseMutex();
-        }
-    }
-
-    static void UpdateSensor(string sensorId, string mensagem)
-    {
-        string path = "Data/sensores.csv";
-        Mutex m = GetFileMutex(path);
-        m.WaitOne();
-        try
-        {
-            if (!File.Exists(path))
-            {
-                Console.WriteLine("ERRO: sensores.csv não encontrado.");
+                Console.WriteLine($"[{config.Id}] Zona: {config.Zona} | A ouvir: {config.RoutingPattern}\n");
+                CorrerGateway(config);
                 return;
             }
 
-            var lines = File.ReadAllLines(path);
-            bool found = false;
+            var gateways = CsvConfig.LerTodos();
 
-            if (mensagem == "DISCONNECT")
+            if (gateways.Count == 0)
             {
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    var parts = lines[i].Split(';');
-                    if (parts[0] == sensorId)
-                    {
-                        parts[1] = "DESLIGADO";
-                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-                        lines[i] = string.Join(";", parts);
-                        found = true;
-                    }
-                }
+                Console.WriteLine("[AVISO] Nenhuma gateway encontrada no CSV.");
+                Console.ReadLine();
+                return;
             }
-            else if (mensagem == "VIDEO_END")
-            {
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    var parts = lines[i].Split(';');
-                    if (parts[0] == sensorId)
-                    {
-                        parts[2] = "VIDEO_INATIVO";
-                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-                        lines[i] = string.Join(";", parts);
-                        found = true;
-                    }
-                }
-            }
-            else
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    var parts = lines[i].Split(';');
-                    if (parts[0] == sensorId)
-                    {
-                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-                        parts[1] = "DATA_ATIVO";
-                        lines[i] = string.Join(";", parts);
-                        found = true;
-                    }
-                }
-            if (!found)
-                Console.WriteLine($"AVISO: Sensor '{sensorId}' não encontrado no CSV.");
-            else
-                Console.WriteLine($"Sensor '{sensorId}' atualizado no CSV.");
 
-            File.WriteAllLines(path, lines);
+            Console.WriteLine($"[INIT] A arrancar {gateways.Count} gateway(s)...\n");
+
+            var threads = new List<Thread>();
+
+            foreach (var config in gateways)
+            {
+                var cfg = config;
+                var t = new Thread(() =>
+                {
+                    Console.WriteLine($"[{cfg.Id}] Zona: {cfg.Zona} | A ouvir: {cfg.RoutingPattern}");
+                    CorrerGateway(cfg);
+                });
+                t.Name = cfg.Id;
+                t.IsBackground = true;
+                threads.Add(t);
+                t.Start();
+            }
+
+            Console.WriteLine("\nTodas as gateways ativas. Pressiona [Enter] para parar.\n");
+            Console.ReadLine();
         }
-        finally
+
+        static void CorrerGateway(GatewayConfig config)
         {
-            m.ReleaseMutex();
+            var sub = new Subscriber(config.RoutingPattern);
+
+            sub.Iniciar(mensagem =>
+            {
+                var partes = mensagem.Split(';');
+
+                if (partes.Length == 5)
+                    Console.WriteLine($"[{partes[0]}] {partes[1]} | {partes[2]}.{partes[3]} = {partes[4]}");
+                else
+                    Console.WriteLine($"[AVISO] Mensagem inesperada: {mensagem}");
+            });
         }
-    }
+
+        static void SendResponse(NetworkStream stream, string message)
+        {
+            byte[] resp = Encoding.UTF8.GetBytes(message);
+            stream.Write(resp, 0, resp.Length);
+        }
+
+        static string ReceiveMessage(NetworkStream stream)
+        {
+            byte[] buffer = new byte[1024];
+            int bytesRead = stream.Read(buffer, 0, buffer.Length);
+            return Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        }
+
+        static void SaveData(string message)
+        {
+            string[] parts = message.Split(';');
+
+            string tipo = parts[3];
+
+            string path = $"Data/{tipo}.txt";
+
+            // Garante acesso sequencial ao ficheiro
+            Mutex m = GetFileMutex(path);
+            m.WaitOne();
+            try
+            {
+                Directory.CreateDirectory("Data");
+
+                File.AppendAllText(path, message + Environment.NewLine);
+            }
+            finally
+            {
+                m.ReleaseMutex();
+            }
+        }
+
+        static bool SensorExists(string sensorId)
+        {
+            string path = "Data/sensores.csv";
+
+            Mutex m = GetFileMutex(path);
+            m.WaitOne();
+
+            try
+            {
+                // Se ficheiro não existir, cria-o
+                if (!File.Exists(path))
+                {
+                    Directory.CreateDirectory("Data");
+                    File.WriteAllText(path, "");
+                }
+
+                var lines = File.ReadAllLines(path);
+
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split(';');
+
+                    if (parts[0] == sensorId)
+                    {
+                        // Sensor já está ativo
+                        if (parts[1] == "ATIVO")
+                            return true;
+
+                        // Sensor existe mas está inativo
+                        if (parts[1] == "INATIVO")
+                        {
+                            parts[1] = "ATIVO";
+                            lines[i] = string.Join(";", parts);
+
+                            File.WriteAllLines(path, lines);
+
+                            return false;
+                        }
+                    }
+                }
+
+                // Sensor não existe → adicionar nova linha
+                string novaLinha = $"{sensorId};ATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
+
+                File.AppendAllText(path, novaLinha + Environment.NewLine);
+
+                return false;
+            }
+            finally
+            {
+                m.ReleaseMutex();
+            }
+        }
+
+        static void UpdateSensor(string sensorId, string mensagem)
+        {
+            string path = "Data/sensores.csv";
+            Mutex m = GetFileMutex(path);
+            m.WaitOne();
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    Console.WriteLine("ERRO: sensores.csv não encontrado.");
+                    return;
+                }
+
+                var lines = File.ReadAllLines(path);
+                bool found = false;
+
+                if (mensagem == "DISCONNECT")
+                {
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        var parts = lines[i].Split(';');
+                        if (parts[0] == sensorId)
+                        {
+                            parts[1] = "INATIVO";
+                            parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                            lines[i] = string.Join(";", parts);
+                            found = true;
+                        }
+                    }
+                }
+                else
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        var parts = lines[i].Split(';');
+                        if (parts[0] == sensorId)
+                        {
+                            parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                            lines[i] = string.Join(";", parts);
+                            found = true;
+                        }
+                    }
+                if (!found)
+                    Console.WriteLine($"AVISO: Sensor '{sensorId}' não encontrado no CSV.");
+                else
+                    Console.WriteLine($"Sensor '{sensorId}' atualizado no CSV.");
+
+                File.WriteAllLines(path, lines);
+            }
+            finally
+            {
+                m.ReleaseMutex();
+            }
+        }
 
 
-    static void HandleClient(TcpClient client)
-    {
-        NetworkStream stream = client.GetStream();
-        string sensorId = "";
+        static void HandleClient(TcpClient client)
+        {
+            NetworkStream stream = client.GetStream();
+            string sensorId = "";
 
-        int threadId = Thread.CurrentThread.ManagedThreadId;
+            int threadId = Thread.CurrentThread.ManagedThreadId;
 
-        try
+            try
+            {
+                while (true)
+                {
+                    string message = ReceiveMessage(stream);
+
+                    if (message.StartsWith("HELLO"))
+                    {
+                        string[] parts = message.Split(';');
+
+                        sensorId = parts[1];
+
+                        if (SensorExists(sensorId))
+                        {
+                            SendResponse(stream, "ERROR:SENSOR_IS_ACTIVE");
+                            continue;
+                        }
+
+                        Console.WriteLine("[DATA] Sensor ID: " + sensorId);
+                        SendResponse(stream, "OK");
+                    }
+
+                    // HEARTBEAT
+                    else if (message.StartsWith("HEARTBEAT"))
+                    {
+                        Console.WriteLine("Heartbeat de " + message);
+
+                        UpdateSensor(sensorId, null);
+
+                        SendResponse(stream, "HEARTBEAT_OK");
+                    }
+
+                    // Dados ambientais
+                    // formato: timestamp;id;zona;tipo;valor
+                    else if (message.Split(';').Length == 5 && message.StartsWith("2"))
+                    {
+                        string tipo = message.Split(';')[3];
+
+                        if (!Parametros.Contains(tipo))
+                        {
+                            Console.WriteLine($"Tipo de dado inválido: {tipo}");
+                            SendResponse(stream, $"ERROR:INVALID_TYPE:{tipo}");
+                            continue;
+                        }
+
+                        Console.WriteLine("[DATA] Dados recebidos: " + message);
+
+                        SaveData(message);
+                        UpdateSensor(sensorId, null);
+
+                        SendResponse(stream, "DATA_RECEIVED");
+                    }
+
+                    // Tipos de dados
+                    else if (message.Contains(";"))
+                    {
+                        string[] tipos = message.Split(';');
+                        List<string> invalidos = ValidarTipos(tipos);
+
+                        if (invalidos.Count > 0)
+                        {
+                            Console.WriteLine($"[DATA] Tipos inválidos: {string.Join(", ", invalidos)}");
+                            SendResponse(stream, $"ERROR:INVALID_TYPES:{string.Join(",", invalidos)}");
+                        }
+                        else
+                            SendResponse(stream, "TYPES_OK");
+                    }
+
+                    // DISCONNECT
+                    else if (message == "DISCONNECT")
+                    {
+                        SendResponse(stream, "BYE");
+                        UpdateSensor(sensorId, message);
+                        break;
+                    }
+
+                    // Mensagem desconhecida
+                    else
+                    {
+                        SendResponse(stream, "ERROR:UNKNOWN_COMMAND");
+                        break;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[Thread {Thread.CurrentThread.ManagedThreadId}] Erro: {e.Message}");
+            }
+            finally
+            {
+                client.Close();
+
+                Console.WriteLine($"[Thread {threadId}] Sensor desconectado.");
+            }
+        }
+
+        static bool SendToServer(string data)
+        {
+            try
+            {
+                TcpClient serverClient = new TcpClient("127.0.0.1", 6000);
+
+                NetworkStream stream = serverClient.GetStream();
+
+                SendResponse(stream, data);
+
+                string response = ReceiveMessage(stream);
+
+                Console.WriteLine("Servidor respondeu: " + response);
+
+                serverClient.Close();
+                return true;
+            }
+            catch
+            {
+                Console.WriteLine($"Erro ao enviar: {data}");
+                return false;
+            }
+        }
+
+        static void DataSender(int intervalSeconds)
         {
             while (true)
             {
-                string message = ReceiveMessage(stream);
-                Console.Write(message + "\n");
+                Thread.Sleep(intervalSeconds * 1000);
 
-                if (message.StartsWith("HELLO"))
-                {
-                    string[] parts = message.Split(';');
+                string[] files = Directory.GetFiles("Data", "*.txt");
 
-                    sensorId = parts[1];
-
-                    if (DATASensorExists(sensorId))
-                    {
-                        SendResponse(stream, "ERROR:SENSOR_IS_ACTIVE");
-                        continue;
-                    }
-
-                    Console.WriteLine("[DATA] Sensor ID: " + sensorId);
-                    SendResponse(stream, "OK");
-                }
-
-                // HEARTBEAT
-                else if (message.StartsWith("HEARTBEAT"))
-                {
-                    Console.WriteLine("Heartbeat de " + message);
-
-                    UpdateSensor(sensorId, null);
-
-                    SendResponse(stream, "HEARTBEAT_OK");
-                }
-
-                // Dados ambientais
-                // formato: timestamp;id;zona;tipo;valor
-                else if (message.Split(';').Length == 5 && message.StartsWith("2"))
-                {
-                    string tipo = message.Split(';')[3];
-
-                    if (!Parametros.Contains(tipo))
-                    {
-                        Console.WriteLine($"Tipo de dado inválido: {tipo}");
-                        SendResponse(stream, $"ERROR:INVALID_TYPE:{tipo}");
-                        continue;
-                    }
-
-                    Console.WriteLine("[DATA] Dados recebidos: " + message);
-
-                    SaveData(message);
-                    UpdateSensor(sensorId, null);
-
-                    SendResponse(stream, "DATA_RECEIVED");
-                }
-
-                // Tipos de dados
-                else if (message.Contains(";"))
-                {
-                    string[] tipos = message.Split(';');
-                    List<string> invalidos = ValidarTipos(tipos);
-
-                    if (invalidos.Count > 0)
-                    {
-                        Console.WriteLine($"[DATA] Tipos inválidos: {string.Join(", ", invalidos)}");
-                        SendResponse(stream, $"ERROR:INVALID_TYPES:{string.Join(",", invalidos)}");
-                    }
-                    else
-                        SendResponse(stream, "TYPES_OK");
-                }
-
-                // DISCONNECT
-                else if (message == "DISCONNECT")
-                {
-                    SendResponse(stream, "BYE");
-                    UpdateSensor(sensorId, message);
-                    break;
-                }
-
-                // Mensagem desconhecida
-                else
-                {
-                    SendResponse(stream, "ERROR:UNKNOWN_COMMAND");
-                    break;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[Thread {Thread.CurrentThread.ManagedThreadId}] Erro: {e.Message}");
-        }
-        finally
-        {
-            client.Close();
-
-            Console.WriteLine($"[Thread {threadId}] Sensor desconectado.");
-        }
-    }
-
-    static bool SendToServer(string data)
-    {
-        try
-        {
-            TcpClient serverClient = new TcpClient("127.0.0.1", 6000);
-
-            NetworkStream stream = serverClient.GetStream();
-
-            SendResponse(stream, data);
-
-            string response = ReceiveMessage(stream);
-
-            Console.WriteLine("Servidor respondeu: " + response);
-
-            serverClient.Close();
-            if (response == "DATA_STORED")
-                return true;
-            else
-                return false;
-        }
-        catch
-        {
-            Console.WriteLine($"Erro ao enviar: {data}");
-            return false;
-        }
-    }
-
-    static void DataSender(int intervalSeconds)
-    {
-        while (true)
-        {
-            Thread.Sleep(intervalSeconds * 1000);
-
-            string[] files = Directory.GetFiles("Data", "*.txt");
-            if (files != null)
-            {              
                 foreach (string file in files)
                 {
                     Mutex m = GetFileMutex(file);
@@ -435,10 +404,9 @@ class Gateway
                     {
                         m.ReleaseMutex();
                     }
-
-                    if(lines.Length > 0)
+                    if (lines != null)
                     {
-                        Console.WriteLine($"[DATA] A enviar dados de {file} ao servidor...");
+                        Console.WriteLine("[DATA] A enviar dados ao servidor...");
                         List<string> falhas = new List<string>();
 
                         foreach (string line in lines)
@@ -464,267 +432,249 @@ class Gateway
                         {
                             m.ReleaseMutex();
                         }
-                        Console.WriteLine("[DATA] Envio concluído.");
                     }
                 }
+                Console.WriteLine("[DATA] Envio concluído.");
+
             }
         }
-    }
 
-    static void Heatbeat_Check(int timeoutSeconds)
-    {
-        while (true)
+        static void Heatbeat_Check(int timeoutSeconds)
         {
-            Thread.Sleep(timeoutSeconds * 1000);
-
-            Console.WriteLine("[HB_Check] A verificar sensores...");
-
-            string path = "Data/sensores.csv";
-
-            if (!File.Exists(path))
-                return;
-
-            Mutex m = GetFileMutex(path);
-            m.WaitOne();
-            try
+            while (true)
             {
+                Thread.Sleep(timeoutSeconds * 1000);
 
-                var lines = File.ReadAllLines(path);
-                bool alterado = false;
+                Console.WriteLine("[HB_Check] A verificar sensores...");
 
-
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    var parts = lines[i].Split(';');
-                    if (parts.Length < 4)
-                        continue;
-
-                    string sensorId = parts[0];
-                    string estado = parts[1];
-                    string timestamp = parts[3];
-
-                    DateTime lastSeen = DateTime.Parse(timestamp);
-                    double segundos = (DateTime.Now - lastSeen).TotalSeconds;
-
-                    if (segundos > timeoutSeconds && estado == "DATA_ATIVO")
-                    {
-                        Console.WriteLine($"[HB_Check] Sensor '{sensorId}' inativo por timeout ({segundos:F0}s).");
-                        parts[1] = "DATA_INATIVO";
-                        lines[i] = string.Join(";", parts);
-                        alterado = true;
-                    }
-
-                    if(segundos > (timeoutSeconds * 2) && estado == "DATA_INATIVO")
-                    {
-                        Console.WriteLine($"[HB_Check] Sensor '{sensorId}' desligado por timeout ({segundos:F0}s).");
-                        parts[1] = "DESLIGADO";
-                        lines[i] = string.Join(";", parts);
-                        alterado = true;
-                    }
-                }
-
-                if (alterado)
-                    File.WriteAllLines(path, lines);
-            }
-            finally
-            {
-                m.ReleaseMutex();
-            }
-
-            Console.WriteLine("[HB_Check] Verificação concluída.");
-        }
-    }
-
-
-    static List<byte[]> frameBuffer = new List<byte[]>();
-    static Mutex bufferMutex = new Mutex();
-
-    static string activeVideoSensor = null;
-    static Mutex videoMutex = new Mutex();
-
-    static void ReceiveVideo(int port)
-    {
-        UdpClient udpServer = new UdpClient(port);
-        Console.WriteLine($"[UDP] À escuta de vídeo na porta {port}");
-
-        IPEndPoint sensorEndpoint = new IPEndPoint(IPAddress.Any, 0);
-
-        while (true)
-        {
-            try
-            {
-                byte[] packet = udpServer.Receive(ref sensorEndpoint);
-
-                string text = Encoding.UTF8.GetString(packet);
-
-                if (text.StartsWith("VIDEO_HELLO"))
-                {
-                    string[] parts = text.Split(';');
-                    string sensorId = parts[1];
-                    
-                    if (VIDEOSensorExists(sensorId))
-                    {
-                        byte[] resp = Encoding.UTF8.GetBytes("ERROR:SENSOR_VIDEO_IS_ACTIVE");
-                        udpServer.Send(resp, resp.Length, sensorEndpoint);
-                        continue;
-                    }
-
-                    videoMutex.WaitOne();
-                    try
-                    {
-                        if (activeVideoSensor == null)
-                        {
-                            activeVideoSensor = sensorId;
-                            Console.WriteLine($"[VIDEO] Sensor ativo: {sensorId}");
-
-                            byte[] resp = Encoding.UTF8.GetBytes("VIDEO_OK");
-                            udpServer.Send(resp, resp.Length, sensorEndpoint);
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[VIDEO] Sensor em espera: {sensorId}");
-
-                            byte[] resp = Encoding.UTF8.GetBytes("VIDEO_WAIT");
-                            udpServer.Send(resp, resp.Length, sensorEndpoint);
-                            UpdateSensor(sensorId, "VIDEO_END");
-                        }
-                    }
-                    finally
-                    {
-                        videoMutex.ReleaseMutex();
-                    }
-                    continue;
-                }
-
-                if (text.StartsWith("VIDEO_END"))
-                {
-                    string[] parts = text.Split(';');
-                    string sensorId = parts[1];
-                    UpdateSensor(sensorId, "VIDEO_END");
-
-                    videoMutex.WaitOne();
-                    try
-                    {
-                        if (activeVideoSensor == sensorId)
-                        {
-                            Console.WriteLine($"[VIDEO] Sensor terminou: {sensorId}");
-                            activeVideoSensor = null;
-                        }
-                    }
-                    finally
-                    {
-                        videoMutex.ReleaseMutex();
-                    }
-                    FlushBuffer(sensorId);
-                    continue;
-                }
-
-                int headerEndIndex = Array.IndexOf(packet, (byte)'\n');
-                if (headerEndIndex == -1)
-                    continue;
-
-                string header = Encoding.UTF8.GetString(packet, 0, headerEndIndex);
-
-                byte[] payload = new byte[packet.Length - headerEndIndex - 1];
-                Array.Copy(packet, headerEndIndex + 1, payload, 0, payload.Length);
-
-                var partsFrame = header.Split(';');
-                if (partsFrame.Length < 5)
-                    continue;
-
-                int size = int.Parse(partsFrame[4]);
-
-                string sensorIdFrame = partsFrame[1];
-
-                videoMutex.WaitOne();
+                string path = "Data/sensores.csv";
+                Mutex m = GetFileMutex(path);
+                m.WaitOne();
                 try
                 {
-                    if (sensorIdFrame != activeVideoSensor)
-                        continue;
+                    if (!File.Exists(path)) return;
 
-                    bufferMutex.WaitOne();
-                    try
+                    var lines = File.ReadAllLines(path);
+                    bool alterado = false;
+
+                    for (int i = 0; i < lines.Length; i++)
                     {
-                        frameBuffer.Add(payload);
+                        var parts = lines[i].Split(';');
+                        if (parts.Length < 3)
+                            continue;
 
-                        if (frameBuffer.Count == size / 2)
+                        string sensorId = parts[0];
+                        string estado = parts[1];
+                        string timestamp = parts[2];
+
+                        // Só verifica sensores ativos
+                        if (estado != "ATIVO")
+                            continue;
+
+                        DateTime lastSeen = DateTime.Parse(timestamp);
+                        double segundos = (DateTime.Now - lastSeen).TotalSeconds;
+
+                        if (segundos > timeoutSeconds)
                         {
-                            Console.WriteLine("[VIDEO] Enviando primeira metade...");
-                            SendVideo(frameBuffer.ToList(), activeVideoSensor);
-                            frameBuffer.Clear();
+                            Console.WriteLine($"[HB_Check] Sensor '{sensorId}' inativo por timeout ({segundos:F0}s).");
+                            parts[1] = "INATIVO";
+                            lines[i] = string.Join(";", parts);
+                            alterado = true;
                         }
                     }
-                    finally
-                    {
-                        bufferMutex.ReleaseMutex();
-                    }
+
+                    if (alterado)
+                        File.WriteAllLines(path, lines);
                 }
                 finally
                 {
-                    videoMutex.ReleaseMutex();
+                    m.ReleaseMutex();
+                }
+
+                Console.WriteLine("[HB_Check] Verificação concluída.");
+            }
+        }
+
+        static List<byte[]> frameBuffer = new List<byte[]>();
+        static Mutex bufferMutex = new Mutex();
+
+        static string activeVideoSensor = null;
+        static Mutex videoMutex = new Mutex();
+
+        static void ReceiveVideo(int port)
+        {
+            UdpClient udpServer = new UdpClient(port);
+            Console.WriteLine($"[UDP] À escuta de vídeo na porta {port}");
+
+            IPEndPoint sensorEndpoint = new IPEndPoint(IPAddress.Any, 0);
+
+            while (true)
+            {
+                try
+                {
+                    byte[] packet = udpServer.Receive(ref sensorEndpoint);
+
+                    string text = Encoding.UTF8.GetString(packet);
+
+                    if (text.StartsWith("VIDEO_HELLO"))
+                    {
+                        string[] parts = text.Split(';');
+                        string sensorId = parts[1];
+
+                        videoMutex.WaitOne();
+                        try
+                        {
+                            if (activeVideoSensor == null)
+                            {
+                                activeVideoSensor = sensorId;
+                                Console.WriteLine($"[VIDEO] Sensor ativo: {sensorId}");
+
+                                byte[] resp = Encoding.UTF8.GetBytes("VIDEO_OK");
+                                udpServer.Send(resp, resp.Length, sensorEndpoint);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[VIDEO] Sensor em espera: {sensorId}");
+
+                                byte[] resp = Encoding.UTF8.GetBytes("VIDEO_WAIT");
+                                udpServer.Send(resp, resp.Length, sensorEndpoint);
+                            }
+                        }
+                        finally
+                        {
+                            videoMutex.ReleaseMutex();
+                        }
+                        continue;
+                    }
+
+                    if (text.StartsWith("VIDEO_END"))
+                    {
+                        string[] parts = text.Split(';');
+                        string sensorId = parts[1];
+
+                        videoMutex.WaitOne();
+                        try
+                        {
+                            if (activeVideoSensor == sensorId)
+                            {
+                                Console.WriteLine($"[VIDEO] Sensor terminou: {sensorId}");
+                                activeVideoSensor = null;
+                            }
+                        }
+                        finally
+                        {
+                            videoMutex.ReleaseMutex();
+                        }
+                        FlushBuffer(sensorId);
+                        continue;
+                    }
+
+                    int headerEndIndex = Array.IndexOf(packet, (byte)'\n');
+                    if (headerEndIndex == -1)
+                        continue;
+
+                    string header = Encoding.UTF8.GetString(packet, 0, headerEndIndex);
+
+                    byte[] payload = new byte[packet.Length - headerEndIndex - 1];
+                    Array.Copy(packet, headerEndIndex + 1, payload, 0, payload.Length);
+
+                    var partsFrame = header.Split(';');
+                    if (partsFrame.Length < 5)
+                        continue;
+
+                    int size = int.Parse(partsFrame[4]);
+
+                    string sensorIdFrame = partsFrame[1];
+
+                    videoMutex.WaitOne();
+                    try
+                    {
+                        if (sensorIdFrame != activeVideoSensor)
+                            continue;
+
+                        bufferMutex.WaitOne();
+                        try
+                        {
+                            frameBuffer.Add(payload);
+
+                            if (frameBuffer.Count == size / 2)
+                            {
+                                Console.WriteLine("[VIDEO] Enviando primeira metade...");
+                                SendVideo(frameBuffer.ToList(), activeVideoSensor);
+                                frameBuffer.Clear();
+                            }
+                        }
+                        finally
+                        {
+                            bufferMutex.ReleaseMutex();
+                        }
+                    }
+                    finally
+                    {
+                        videoMutex.ReleaseMutex();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[VIDEO] Erro: {ex.Message}");
+                }
+            }
+
+        }
+        static void SendVideo(List<byte[]> frames, string sensorId)
+        {
+            try
+            {
+                using (TcpClient client = new TcpClient("127.0.0.1", 7001))
+                using (NetworkStream ns = client.GetStream())
+                {
+                    int i = 0;
+                    foreach (var frame in frames)
+                    {
+                        string header = $"FRAME;{sensorId};{i};{frame.Length}\n";
+                        SendResponse(ns, header);
+                        ns.Write(frame, 0, frame.Length);
+                        i++;
+                    }
+
+                    string end = $"FRAMES_END;{sensorId}\n";
+                    SendResponse(ns, end);
+
+                    string response = ReceiveMessage(ns);
+                    Console.WriteLine("[VIDEO] Resposta do servidor: " + response);
+
+                    if (response == "FRAMES_SAVED")
+                    {
+                        Console.WriteLine("[VIDEO] Frames guardados com sucesso!");
+                    }
+                    else
+                    {
+                        Console.WriteLine("[VIDEO] Erro ao guardar frames!");
+                    }
+
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VIDEO] Erro: {ex.Message}");
+                Console.WriteLine($"[Video] Erro ao enviar: {ex.Message}");
             }
         }
-
-    }
-
-    static void SendVideo(List<byte[]> frames, string sensorId)
-    {
-        try
+        static void FlushBuffer(string sensorId)
         {
-            using (TcpClient client = new TcpClient("127.0.0.1", 7001))
-            using (NetworkStream ns = client.GetStream())
+            bufferMutex.WaitOne();
+            try
             {
-                int i = 0;
-                foreach (var frame in frames)
+                if (frameBuffer.Count > 0)
                 {
-                    string header = $"FRAME;{sensorId};{i};{frame.Length}\n";
-                    SendResponse(ns, header);
-                    ns.Write(frame, 0, frame.Length);
-                    i++;
+                    Console.WriteLine("[VIDEO] Enviando restante dos frames...");
+                    SendVideo(frameBuffer.ToList(), sensorId);
+                    frameBuffer.Clear();
                 }
-
-                string end = $"FRAMES_END;{sensorId}\n";
-                SendResponse(ns, end);
-
-                string response = ReceiveMessage(ns);
-                Console.WriteLine("[VIDEO] Resposta do servidor: " + response);
-
-                if (response == "FRAMES_SAVED")
-                {
-                    Console.WriteLine("[VIDEO] Frames guardados com sucesso!");
-                }
-                else
-                {
-                    Console.WriteLine("[VIDEO] Erro ao guardar frames!");
-                }
-
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Video] Erro ao enviar: {ex.Message}");
-        }
-    }
-    static void FlushBuffer(string sensorId)
-    {
-        bufferMutex.WaitOne();
-        try
-        {
-            if (frameBuffer.Count > 0)
+            finally
             {
-                Console.WriteLine("[VIDEO] Enviando restante dos frames...");
-                SendVideo(frameBuffer.ToList(), sensorId);
-                frameBuffer.Clear();
+                bufferMutex.ReleaseMutex();
             }
-        }
-        finally
-        {
-            bufferMutex.ReleaseMutex();
         }
     }
 }
