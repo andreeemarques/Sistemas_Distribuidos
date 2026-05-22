@@ -5,10 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Threading;
-using Grpc.Net.Client;
-using Preprocessing;
 
 class Gateway
 {
@@ -56,7 +55,7 @@ class Gateway
         senderThread.IsBackground = true;
         senderThread.Start();
 
-        Thread watchdogThread = new Thread(() => Watchdog(60));
+        Thread watchdogThread = new Thread(() => Heatbeat_Check(120));
         watchdogThread.IsBackground = true;
         watchdogThread.Start();
 
@@ -70,7 +69,7 @@ class Gateway
             Console.WriteLine("Sensor conectado!");
 
             Thread t = new Thread(() => HandleClient(client));
-            //t.IsBackground = true;
+            t.IsBackground = true;
             t.Start();
         }
     }
@@ -111,7 +110,7 @@ class Gateway
         }
     }
 
-    static bool SensorExists(string sensorId)
+    static bool DATASensorExists(string sensorId)
     {
         string path = "Data/sensores.csv";
 
@@ -136,13 +135,13 @@ class Gateway
                 if (parts[0] == sensorId)
                 {
                     // Sensor já está ativo
-                    if (parts[1] == "ATIVO")
+                    if (parts[1] == "DATA_ATIVO")
                         return true;
 
                     // Sensor existe mas está inativo
-                    if (parts[1] == "INATIVO")
+                    if (parts[1] == "DESLIGADO" || parts[1]=="DATA_INATIVO")
                     {
-                        parts[1] = "ATIVO";
+                        parts[1] = "DATA_ATIVO";
                         lines[i] = string.Join(";", parts);
 
                         File.WriteAllLines(path, lines);
@@ -153,10 +152,58 @@ class Gateway
             }
 
             // Sensor não existe → adicionar nova linha
-            string novaLinha = $"{sensorId};ATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
+            string novaLinha = $"{sensorId};DATA_ATIVO;VIDEO_INATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
 
             File.AppendAllText(path, novaLinha + Environment.NewLine);
 
+            return false;
+        }
+        finally
+        {
+            m.ReleaseMutex();
+        }
+    }
+
+    static bool VIDEOSensorExists(string sensorId)
+    {
+        string path = "Data/sensores.csv";
+
+        Mutex m = GetFileMutex(path);
+        m.WaitOne();
+
+        try
+        {
+            // Se ficheiro não existir, cria-o
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory("Data");
+                File.WriteAllText(path, "");
+            }
+
+            var lines = File.ReadAllLines(path);
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var parts = lines[i].Split(';');
+
+                if (parts[0] == sensorId)
+                {
+                    // Sensor já está ativo
+                    if (parts[2] == "VIDEO_ATIVO")
+                        return true;
+
+                    // Sensor existe mas está inativo
+                    if (parts[2] == "VIDEO_INATIVO")
+                    {
+                        parts[2] = "VIDEO_ATIVO";
+                        lines[i] = string.Join(";", parts);
+
+                        File.WriteAllLines(path, lines);
+
+                        return false;
+                    }
+                }
+            }
             return false;
         }
         finally
@@ -188,8 +235,22 @@ class Gateway
                     var parts = lines[i].Split(';');
                     if (parts[0] == sensorId)
                     {
-                        parts[1] = "INATIVO";
-                        parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        parts[1] = "DESLIGADO";
+                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        lines[i] = string.Join(";", parts);
+                        found = true;
+                    }
+                }
+            }
+            else if (mensagem == "VIDEO_END")
+            {
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split(';');
+                    if (parts[0] == sensorId)
+                    {
+                        parts[2] = "VIDEO_INATIVO";
+                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
                         lines[i] = string.Join(";", parts);
                         found = true;
                     }
@@ -201,7 +262,8 @@ class Gateway
                     var parts = lines[i].Split(';');
                     if (parts[0] == sensorId)
                     {
-                        parts[2] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        parts[3] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                        parts[1] = "DATA_ATIVO";
                         lines[i] = string.Join(";", parts);
                         found = true;
                     }
@@ -219,6 +281,7 @@ class Gateway
         }
     }
 
+
     static void HandleClient(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
@@ -231,6 +294,7 @@ class Gateway
             while (true)
             {
                 string message = ReceiveMessage(stream);
+                Console.Write(message + "\n");
 
                 if (message.StartsWith("HELLO"))
                 {
@@ -238,7 +302,7 @@ class Gateway
 
                     sensorId = parts[1];
 
-                    if (SensorExists(sensorId))
+                    if (DATASensorExists(sensorId))
                     {
                         SendResponse(stream, "ERROR:SENSOR_IS_ACTIVE");
                         continue;
@@ -262,31 +326,18 @@ class Gateway
                 // formato: timestamp;id;zona;tipo;valor
                 else if (message.Split(';').Length == 5 && message.StartsWith("2"))
                 {
-                    string[] parts = message.Split(';');
-                    string tipo = parts[3];
+                    string tipo = message.Split(';')[3];
 
                     if (!Parametros.Contains(tipo))
                     {
-                        Console.WriteLine($"Tipo de dado invalido: {tipo}");
+                        Console.WriteLine($"Tipo de dado inválido: {tipo}");
                         SendResponse(stream, $"ERROR:INVALID_TYPE:{tipo}");
                         continue;
                     }
 
-                    // Chamar o serviço RPC de pré-processamento
-                    var (valid, normalizedValue, unit) = CallPreProcessing(message);
+                    Console.WriteLine("[DATA] Dados recebidos: " + message);
 
-                    if (!valid)
-                    {
-                        Console.WriteLine($"[RPC] Dado rejeitado pelo pre-processamento.");
-                        SendResponse(stream, "ERROR:PREPROCESS_FAILED");
-                        continue;
-                    }
-
-                    // Reconstruir mensagem com o valor normalizado
-                    string processedMessage = $"{parts[0]};{parts[1]};{parts[2]};{parts[3]};{normalizedValue}";
-                    Console.WriteLine($"[RPC] Dado normalizado: {processedMessage} ({unit})");
-
-                    SaveData(processedMessage);
+                    SaveData(message);
                     UpdateSensor(sensorId, null);
 
                     SendResponse(stream, "DATA_RECEIVED");
@@ -350,7 +401,10 @@ class Gateway
             Console.WriteLine("Servidor respondeu: " + response);
 
             serverClient.Close();
-            return true;
+            if (response == "DATA_STORED")
+                return true;
+            else
+                return false;
         }
         catch
         {
@@ -365,94 +419,105 @@ class Gateway
         {
             Thread.Sleep(intervalSeconds * 1000);
 
-            Console.WriteLine("[DATA] A enviar dados ao servidor...");
-
             string[] files = Directory.GetFiles("Data", "*.txt");
-
-            foreach (string file in files)
-            {
-                Mutex m = GetFileMutex(file);
-                m.WaitOne();
-                string[] lines;
-                try
+            if (files != null)
+            {              
+                foreach (string file in files)
                 {
-                    lines = File.ReadAllLines(file);
-                }
-                finally
-                {
-                    m.ReleaseMutex();
-                }
-
-                List<string> falhas = new List<string>();
-
-                foreach (string line in lines)
-                {
-                    if (!string.IsNullOrWhiteSpace(line))
+                    Mutex m = GetFileMutex(file);
+                    m.WaitOne();
+                    string[] lines;
+                    try
                     {
-                        bool sucesso = SendToServer(line);
-                        if (!sucesso)
-                            falhas.Add(line); // guarda as linhas que falharam
+                        lines = File.ReadAllLines(file);
+                    }
+                    finally
+                    {
+                        m.ReleaseMutex();
+                    }
+
+                    if(lines.Length > 0)
+                    {
+                        Console.WriteLine($"[DATA] A enviar dados de {file} ao servidor...");
+                        List<string> falhas = new List<string>();
+
+                        foreach (string line in lines)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                bool sucesso = SendToServer(line);
+                                if (!sucesso)
+                                    falhas.Add(line); // guarda as linhas que falharam
+                            }
+                        }
+
+                        // Reescreve o ficheiro apenas com as linhas que falharam
+                        m.WaitOne();
+                        try
+                        {
+                            if (falhas.Count == 0)
+                                File.WriteAllText(file, "");
+                            else
+                                File.WriteAllLines(file, falhas);
+                        }
+                        finally
+                        {
+                            m.ReleaseMutex();
+                        }
+                        Console.WriteLine("[DATA] Envio concluído.");
                     }
                 }
-
-                // Reescreve o ficheiro apenas com as linhas que falharam
-                m.WaitOne();
-                try
-                {
-                    if (falhas.Count == 0)
-                        File.WriteAllText(file, "");
-                    else
-                        File.WriteAllLines(file, falhas);
-                }
-                finally
-                {
-                    m.ReleaseMutex();
-                }
             }
-
-            Console.WriteLine("[DATA] Envio concluído.");
         }
     }
 
-    static void Watchdog(int timeoutSeconds)
+    static void Heatbeat_Check(int timeoutSeconds)
     {
         while (true)
         {
             Thread.Sleep(timeoutSeconds * 1000);
 
-            Console.WriteLine("[Watchdog] A verificar sensores...");
+            Console.WriteLine("[HB_Check] A verificar sensores...");
 
             string path = "Data/sensores.csv";
+
+            if (!File.Exists(path))
+                return;
+
             Mutex m = GetFileMutex(path);
             m.WaitOne();
             try
             {
-                if (!File.Exists(path)) return;
 
                 var lines = File.ReadAllLines(path);
                 bool alterado = false;
 
+
                 for (int i = 0; i < lines.Length; i++)
                 {
                     var parts = lines[i].Split(';');
-                    if (parts.Length < 3)
+                    if (parts.Length < 4)
                         continue;
 
                     string sensorId = parts[0];
                     string estado = parts[1];
-                    string timestamp = parts[2];
-
-                    // Só verifica sensores ativos
-                    if (estado != "ATIVO")
-                        continue;
+                    string timestamp = parts[3];
 
                     DateTime lastSeen = DateTime.Parse(timestamp);
                     double segundos = (DateTime.Now - lastSeen).TotalSeconds;
 
-                    if (segundos > timeoutSeconds)
+                    if (segundos > timeoutSeconds && estado == "DATA_ATIVO")
                     {
-                        Console.WriteLine($"[Watchdog] Sensor '{sensorId}' inativo por timeout ({segundos:F0}s).");
-                        parts[1] = "INATIVO";
+                        Console.WriteLine($"[HB_Check] Sensor '{sensorId}' inativo por timeout ({segundos:F0}s).");
+                        parts[1] = "DATA_INATIVO";
+                        lines[i] = string.Join(";", parts);
+                        alterado = true;
+                    }
+
+                    if(segundos > (timeoutSeconds * 2) && estado == "DATA_INATIVO")
+                    {
+                        Console.WriteLine($"[HB_Check] Sensor '{sensorId}' desligado por timeout ({segundos:F0}s).");
+                        parts[1] = "DESLIGADO";
                         lines[i] = string.Join(";", parts);
                         alterado = true;
                     }
@@ -466,7 +531,7 @@ class Gateway
                 m.ReleaseMutex();
             }
 
-            Console.WriteLine("[Watchdog] Verificação concluída.");
+            Console.WriteLine("[HB_Check] Verificação concluída.");
         }
     }
 
@@ -496,6 +561,13 @@ class Gateway
                 {
                     string[] parts = text.Split(';');
                     string sensorId = parts[1];
+                    
+                    if (VIDEOSensorExists(sensorId))
+                    {
+                        byte[] resp = Encoding.UTF8.GetBytes("ERROR:SENSOR_VIDEO_IS_ACTIVE");
+                        udpServer.Send(resp, resp.Length, sensorEndpoint);
+                        continue;
+                    }
 
                     videoMutex.WaitOne();
                     try
@@ -514,6 +586,7 @@ class Gateway
 
                             byte[] resp = Encoding.UTF8.GetBytes("VIDEO_WAIT");
                             udpServer.Send(resp, resp.Length, sensorEndpoint);
+                            UpdateSensor(sensorId, "VIDEO_END");
                         }
                     }
                     finally
@@ -527,6 +600,7 @@ class Gateway
                 {
                     string[] parts = text.Split(';');
                     string sensorId = parts[1];
+                    UpdateSensor(sensorId, "VIDEO_END");
 
                     videoMutex.WaitOne();
                     try
@@ -651,41 +725,6 @@ class Gateway
         finally
         {
             bufferMutex.ReleaseMutex();
-        }
-    }
-
-    static (bool valid, string normalizedValue, string unit) CallPreProcessing(string message)
-    {
-        string[] parts = message.Split(';');
-
-        try
-        {
-            // WinHttpHandler necessário para HTTP/2 no .NET Framework
-            var handler = new System.Net.Http.WinHttpHandler();
-
-            var channel = GrpcChannel.ForAddress("http://localhost:50051",
-                new GrpcChannelOptions { HttpHandler = handler });
-
-            var client = new PreProcessingService.PreProcessingServiceClient(channel);
-
-            var response = client.ProcessData(new SensorData
-            {
-                Timestamp = parts[0],
-                SensorId = parts[1],
-                Zone = parts[2],
-                Type = parts[3],
-                Value = parts[4]
-            });
-
-            channel.Dispose();
-
-            return (response.Valid, response.NormalizedValue, response.Unit);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[RPC] Erro ao contactar pre-processamento: {ex.Message}");
-            // Fallback: aceita o dado original se o servico estiver em baixo
-            return (true, parts[4], "");
         }
     }
 }

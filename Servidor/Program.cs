@@ -1,25 +1,28 @@
-﻿using System;
+﻿using Servidor.Data;
+using Servidor.Models;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.Remoting.Messaging;
 using System.Text;
 using System.Threading;
-using Servidor.Data;
-using Servidor.Models;
 
 class Program
 {
     static Mutex mutex = new Mutex();
-    static string ficheiro = "dados_recebidos.txt";
+    static AnalysisClient analysisClient = new AnalysisClient(); // NOVO
 
     static void Main()
     {
-        Thread worker = new Thread(ProcessarFicheiro);
-        worker.Start();
-
         TcpListener server = new TcpListener(IPAddress.Any, 6000);
         server.Start();
-        Console.WriteLine("Servidor iniciado na porta 6000...");
+        Console.WriteLine("[DATA] Servidor iniciado na porta 6000...");
+
+        Thread t1 = new Thread(() => ReceiveVideo(7001));
+        t1.IsBackground = true;
+        t1.Start();
 
         while (true)
         {
@@ -29,64 +32,41 @@ class Program
         }
     }
 
+    static string ReceiveMessage(NetworkStream stream)
+    {
+        byte[] buffer = new byte[1024];
+        int bytesRead = stream.Read(buffer, 0, buffer.Length);
+        return Encoding.UTF8.GetString(buffer, 0, bytesRead);
+    }
+
+    static void SendResponse(NetworkStream stream, string message)
+    {
+        byte[] resp = Encoding.UTF8.GetBytes(message);
+        stream.Write(resp, 0, resp.Length);
+    }
+
     static void HandleClient(TcpClient client)
     {
         try
         {
             NetworkStream stream = client.GetStream();
 
-            string header = "";
-            int c;
-            while ((c = stream.ReadByte()) != -1)
+            string header = ReceiveMessage(stream);
+
+            mutex.WaitOne();
+            try
             {
-                if (c == '\n') break;
-                header += (char)c;
+                File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
+                Console.WriteLine("[DATA] Dado guardado!");
+
+                ProcessarFicheiro();
+            }
+            finally
+            {
+                mutex.ReleaseMutex();
             }
 
-            Console.WriteLine("Recebido: " + header);
-
-            if (header.StartsWith("FRAME"))
-            {
-                string[] parts = header.Split(';');
-                int frameId = int.Parse(parts[1]);
-                int size = int.Parse(parts[2]);
-
-                byte[] frame = new byte[size];
-                int total = 0;
-
-                while (total < size)
-                {
-                    int lidos = stream.Read(frame, total, size - total);
-                    total += lidos;
-                }
-
-                Directory.CreateDirectory("frames");
-                File.WriteAllBytes($"frames/frame_{frameId}.jpg", frame);
-
-                Console.WriteLine($"Frame {frameId} guardado!");
-
-                byte[] resposta = Encoding.UTF8.GetBytes("OK\n");
-                stream.Write(resposta, 0, resposta.Length);
-            }
-            else
-            {
-                string data = header.Trim();
-
-                mutex.WaitOne();
-                try
-                {
-                    File.AppendAllText(ficheiro, data + Environment.NewLine);
-                }
-                finally
-                {
-                    mutex.ReleaseMutex();
-                }
-
-                Console.WriteLine("Dados guardados!");
-
-                byte[] resposta = Encoding.UTF8.GetBytes("DATA_STORED\n");
-                stream.Write(resposta, 0, resposta.Length);
-            }
+            SendResponse(stream, "DATA_STORED");
         }
         catch (Exception e)
         {
@@ -98,76 +78,184 @@ class Program
 
     static void ProcessarFicheiro()
     {
-        while (true)
+        try
         {
+            mutex.WaitOne();
             try
             {
-                mutex.WaitOne();
-                try
+                string[] linhas = File.ReadAllLines("dados_recebidos.txt");
+
+                foreach (var linha in linhas)
                 {
-                    if (!File.Exists(ficheiro))
-                        continue;
+                    if (string.IsNullOrWhiteSpace(linha)) continue;
 
-                    string[] linhas = File.ReadAllLines(ficheiro);
-
-                    if (linhas.Length == 0)
-                        continue;
-
-                    File.WriteAllText(ficheiro, "");
-
-                    foreach (var linha in linhas)
+                    try
                     {
-                        try
+                        string[] partes = linha.Split(';');
+
+                        string idSensor = partes[1];
+                        string tipo = partes[3];
+                        double valor = double.Parse(partes[4]);
+
+                        using (var db = new AppDbContext())
                         {
-                            string[] partes = linha.Split(';');
+                            var sensor = db.Sensores.Find(idSensor);
 
-                            if (partes.Length != 3)
-                                continue;
-
-                            string idSensor = partes[0];
-                            string tipo = partes[1];
-                            double valor = double.Parse(partes[2]);
-
-                            using (var db = new AppDbContext())
+                            if (sensor == null)
                             {
-                                var sensor = db.Sensores.Find(idSensor);
-
-                                if (sensor == null)
-                                {
-                                    sensor = new Sensor { IdSensor = idSensor };
-                                    db.Sensores.Add(sensor);
-                                }
-
-                                db.Leituras.Add(new Leitura
-                                {
-                                    IdSensor = idSensor,
-                                    Tipo = tipo,
-                                    Valor = valor,
-                                    DataHora = DateTime.Now
-                                });
-
-                                db.SaveChanges();
+                                sensor = new Sensor { IdSensor = idSensor };
+                                db.Sensores.Add(sensor);
                             }
 
-                            Console.WriteLine("Inserido na BD!");
+                            db.Leituras.Add(new Leitura
+                            {
+                                IdSensor = idSensor,
+                                Tipo = tipo,
+                                Valor = valor,
+                                DataHora = DateTime.Now
+                            });
+
+                            db.SaveChanges();
                         }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine("Erro linha: " + e.Message);
-                        }
+
+                        Console.WriteLine("[DATA] Inserido na BD!");
+
+                        AnalisarDados(idSensor, tipo, valor); // NOVO
+
+                        File.WriteAllText("dados_recebidos.txt", "");
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("[DATA] Erro linha: " + e.Message);
                     }
                 }
-                finally
+            }
+            finally
+            {
+                mutex.ReleaseMutex();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Erro: " + ex.Message);
+        }
+
+        Thread.Sleep(5000);
+    }
+
+    // NOVO — Invocar serviço de análise via RPC
+    static void AnalisarDados(string idSensor, string tipo, double valor)
+    {
+        try
+        {
+            var valores = new List<double> { valor };
+
+            // Análise estatística
+            analysisClient.GetStatistics(idSensor, tipo, valores);
+
+            // Deteção de padrões de poluição
+            var anomalia = analysisClient.DetectAnomalies(idSensor, tipo, valores);
+            if (anomalia != null && anomalia.AnomaliaDetetada)
+                Console.WriteLine($"[RPC] Poluição detetada no sensor {idSensor}: {anomalia.Descricao}");
+
+            // Previsão de riscos para a saúde pública
+            var risco = analysisClient.PredictHealthRisk(idSensor, new List<string> { tipo }, valores);
+            if (risco != null)
+                Console.WriteLine($"[RPC] Risco saúde pública: {risco.NivelRisco} — {risco.Descricao}");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[RPC] Erro análise: " + e.Message);
+        }
+    }
+
+    static void ReceiveVideo(int porta)
+    {
+        TcpListener server = new TcpListener(IPAddress.Any, porta);
+        server.Start();
+        Console.WriteLine("[VIDEO] Servidor à escuta");
+
+        while (true)
+        {
+            TcpClient client = server.AcceptTcpClient();
+            Thread t = new Thread(() => HandleVideoClient(client));
+            t.IsBackground = true;
+            t.Start();
+        }
+    }
+
+    static void HandleVideoClient(TcpClient client)
+    {
+        try
+        {
+            using (NetworkStream stream = client.GetStream())
+            {
+                while (true)
                 {
-                    mutex.ReleaseMutex();
+                    string header = ReadLine(stream);
+                    if (string.IsNullOrEmpty(header)) break;
+
+                    if (header.StartsWith("FRAMES_END"))
+                    {
+                        string sensorId = header.Split(';')[1];
+                        SendResponse(stream, "FRAMES_SAVED");
+                        Console.WriteLine($"[VIDEO] Todos os frames recebidos para sensor {sensorId}.");
+                        break;
+                    }
+
+                    string[] parts = header.Split(';');
+                    if (parts.Length < 4 || parts[0] != "FRAME") break;
+
+                    string sensor = parts[1];
+                    int frameId = int.Parse(parts[2]);
+                    int size = int.Parse(parts[3]);
+
+                    byte[] frame = ReadExact(stream, size);
+
+                    string pasta = $"frames/{sensor}";
+                    Directory.CreateDirectory(pasta);
+                    File.WriteAllBytes($"{pasta}/frame_{frameId}.jpg", frame);
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Erro: " + ex.Message);
-            }
-
-            Thread.Sleep(5000);
         }
+        catch (Exception e)
+        {
+            Console.WriteLine("[VIDEO] Erro: " + e.Message);
+        }
+        finally
+        {
+            client.Close();
+        }
+    }
+
+    static string ReadLine(NetworkStream stream)
+    {
+        List<byte> buffer = new List<byte>();
+        byte[] temp = new byte[1];
+
+        while (true)
+        {
+            int read = stream.Read(temp, 0, 1);
+            if (read == 0) return null;
+            if (temp[0] == '\n') break;
+            buffer.Add(temp[0]);
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    static byte[] ReadExact(NetworkStream stream, int size)
+    {
+        byte[] buffer = new byte[size];
+        int total = 0;
+
+        while (total < size)
+        {
+            int read = stream.Read(buffer, total, size - total);
+            if (read == 0) throw new Exception("Ligação fechada antes de completar frame");
+            total += read;
+        }
+
+        return buffer;
     }
 }

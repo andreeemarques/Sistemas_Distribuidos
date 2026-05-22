@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+option csharp_namespace = "AnalysisService";
+
+package analysis;
+
+service Analyzer {
+  rpc GetStatistics (StatisticsRequest) returns (StatisticsResponse);
+  rpc DetectAnomalies (AnomalyRequest) returns (AnomalyResponse);
+  rpc PredictHealthRisk (HealthRiskRequest) returns (HealthRiskResponse);
+}
+
+message StatisticsRequest {
+  string sensor_id = 1;
+  string tipo = 2;
+  repeated double valores = 3;
+}
+
+message StatisticsResponse {
+  double media = 1;
+  double minimo = 2;
+  double maximo = 3;
+  double desvio_padrao = 4;
+}
+
+message AnomalyRequest {
+  string sensor_id = 1;
+  string tipo = 2;
+  repeated double valores = 3;
+}
+
+message AnomalyResponse {
+  bool anomalia_detetada = 1;
+  repeated double valores_anomalos = 2;
+  string descricao = 3;
+}
+
+message HealthRiskRequest {
+  string sensor_id = 1;
+  repeated string tipos = 2;
+  repeated double valores = 3;
+}
+
+message HealthRiskResponse {
+  string nivel_risco = 1;
+  string descricao = 2;
+  repeated string recomendacoes = 3;
+}
