@@ -3,6 +3,7 @@ using Servidor.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Remoting.Messaging;
@@ -23,12 +24,124 @@ class Program
         t1.IsBackground = true;
         t1.Start();
 
+        Thread webThread = new Thread(StartWebServer);
+        webThread.IsBackground = true;
+        webThread.Start();
+
         while (true)
         {
             TcpClient client = server.AcceptTcpClient();
             Thread t = new Thread(() => HandleClient(client));
             t.Start();
         }
+    }
+
+    static void StartWebServer()
+    {
+        HttpListener listener = new HttpListener();
+
+        listener.Prefixes.Add("http://localhost:8080/");
+
+        listener.Start();
+
+        Console.WriteLine("[WEB] Dashboard online em http://localhost:8080");
+
+        while (true)
+        {
+            HttpListenerContext context = listener.GetContext();
+
+            HttpListenerRequest request = context.Request;
+            HttpListenerResponse response = context.Response;
+
+            string html = GerarDashboard();
+
+            byte[] buffer = Encoding.UTF8.GetBytes(html);
+
+            response.ContentType = "text/html";
+            response.ContentLength64 = buffer.Length;
+
+            response.OutputStream.Write(buffer, 0, buffer.Length);
+
+            response.OutputStream.Close();
+        }
+    }
+
+    static string GerarDashboard()
+    {
+        StringBuilder html = new StringBuilder();
+
+        html.Append(@"
+    <html>
+    <head>
+        <title>Dashboard</title>
+
+        <style>
+            body{
+                font-family: Arial;
+                background:#1e1e1e;
+                color:white;
+                padding:20px;
+            }
+
+            table{
+                width:100%;
+                border-collapse:collapse;
+            }
+
+            th, td{
+                border:1px solid #555;
+                padding:10px;
+            }
+
+            th{
+                background:#333;
+            }
+
+            tr:nth-child(even){
+                background:#2a2a2a;
+            }
+        </style>
+    </head>
+
+    <body>
+        <h1>Dashboard Sensores</h1>
+
+        <table>
+            <tr>
+                <th>Sensor</th>
+                <th>Tipo</th>
+                <th>Valor</th>
+                <th>Data</th>
+            </tr>
+    ");
+
+        using (var db = new AppDbContext())
+        {
+            var leituras = db.Leituras
+                .OrderByDescending(x => x.DataHora)
+                .Take(50)
+                .ToList();
+
+            foreach (var l in leituras)
+            {
+                html.Append($@"
+            <tr>
+                <td>{l.IdSensor}</td>
+                <td>{l.Tipo}</td>
+                <td>{l.Valor}</td>
+                <td>{l.DataHora}</td>
+            </tr>
+            ");
+            }
+        }
+
+        html.Append(@"
+        </table>
+    </body>
+    </html>
+    ");
+
+        return html.ToString();
     }
 
     static string ReceiveMessage(NetworkStream stream)
