@@ -21,7 +21,7 @@ namespace Sensor
         }
         public void Publicar(string sensorId, string zona, string parametro, int valor)
         {
-            string routingKey = $"sensor.{zona}.{parametro}";
+            string routingKey = $"{zona}.{parametro}";
 
             var timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
             string mensagem =$"{timestamp};{sensorId};{zona};{parametro};{valor}";

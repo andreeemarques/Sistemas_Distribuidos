@@ -10,6 +10,6 @@ namespace Gateway
     {
         public string Id { get; set; }
         public string Zona { get; set; }
-        public string RoutingPattern => $"sensor.{Zona}.*";
+        public string RoutingPattern => $"{Zona}.*";
     }
 }

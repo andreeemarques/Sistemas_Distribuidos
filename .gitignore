@@ -12,3 +12,5 @@
 /Sensor/packages
 /Sensor/.vs
 /GateWay/packages
+/GateWay/bin/Debug
+/Sensor/bin/Debug
