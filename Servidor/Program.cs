@@ -38,110 +38,55 @@ class Program
 
     static void StartWebServer()
     {
-        HttpListener listener = new HttpListener();
-
-        listener.Prefixes.Add("http://localhost:8080/");
-
-        listener.Start();
-
-        Console.WriteLine("[WEB] Dashboard online em http://localhost:8080");
-
-        while (true)
+        try
         {
-            HttpListenerContext context = listener.GetContext();
+            HttpListener listener = new HttpListener();
 
-            HttpListenerRequest request = context.Request;
-            HttpListenerResponse response = context.Response;
+            listener.Prefixes.Add("http://localhost:8080/");
 
-            string html = GerarDashboard();
+            listener.Start();
 
-            byte[] buffer = Encoding.UTF8.GetBytes(html);
+            Console.WriteLine("[WEB] Dashboard online");
+            Console.WriteLine("http://localhost:8080/");
 
-            response.ContentType = "text/html";
-            response.ContentLength64 = buffer.Length;
-
-            response.OutputStream.Write(buffer, 0, buffer.Length);
-
-            response.OutputStream.Close();
-        }
-    }
-
-    static string GerarDashboard()
-    {
-        StringBuilder html = new StringBuilder();
-
-        html.Append(@"
-    <html>
-    <head>
-        <title>Dashboard</title>
-
-        <style>
-            body{
-                font-family: Arial;
-                background:#1e1e1e;
-                color:white;
-                padding:20px;
-            }
-
-            table{
-                width:100%;
-                border-collapse:collapse;
-            }
-
-            th, td{
-                border:1px solid #555;
-                padding:10px;
-            }
-
-            th{
-                background:#333;
-            }
-
-            tr:nth-child(even){
-                background:#2a2a2a;
-            }
-        </style>
-    </head>
-
-    <body>
-        <h1>Dashboard Sensores</h1>
-
-        <table>
-            <tr>
-                <th>Sensor</th>
-                <th>Tipo</th>
-                <th>Valor</th>
-                <th>Data</th>
-            </tr>
-    ");
-
-        using (var db = new AppDbContext())
-        {
-            var leituras = db.Leituras
-                .OrderByDescending(x => x.DataHora)
-                .Take(50)
-                .ToList();
-
-            foreach (var l in leituras)
+            while (true)
             {
-                html.Append($@"
-            <tr>
-                <td>{l.IdSensor}</td>
-                <td>{l.Tipo}</td>
-                <td>{l.Valor}</td>
-                <td>{l.DataHora}</td>
-            </tr>
-            ");
+                HttpListenerContext context = listener.GetContext();
+
+                string path = context.Request.Url.AbsolutePath;
+
+                string basePath = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory)
+                                .Parent
+                                .Parent
+                                .FullName;
+
+                if (path == "/style.css")
+                {
+                    string cssPath = Path.Combine(basePath, "dashboard", "style.css");
+
+                    byte[] css = File.ReadAllBytes(cssPath);
+
+                    context.Response.ContentType = "text/css";
+
+                    context.Response.OutputStream.Write(css, 0, css.Length);
+
+                    context.Response.Close();
+
+                    continue;
+                }
+
+                string htmlPath = "";
+
+                if (path == "/")
+                    htmlPath = Path.Combine(basePath, "dashboard", "index.html");
+
+                context.Response.Close();
             }
         }
-
-        html.Append(@"
-        </table>
-    </body>
-    </html>
-    ");
-
-        return html.ToString();
+        catch (Exception ex)
+        {
+            Console.WriteLine("[WEB ERRO] " + ex.Message);
+        }
     }
 
     static string ReceiveMessage(NetworkStream stream)

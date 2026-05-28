@@ -1,0 +1,136 @@
+﻿<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoMonitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav>
+        <div class="nav-brand">
+            <span class="brand-dot"></span>
+            EcoMonitor
+        </div>
+        <ul class="nav-links">
+            <li><a href="#sensores" class="active">Sensores</a></li>
+            <li><a href="#atividade">Atividade</a></li>
+        </ul>
+        <div class="nav-status">
+            <div class="pulse-dot"></div>
+            Servidor ativo
+        </div>
+    </nav>
+
+    <div class="page">
+
+        <section id="sensores">
+            <p class="section-label">Visão Geral</p>
+            <div class="metrics-grid">
+                <div class="metric g">
+                    <div class="metric-lbl">Total Sensores</div>
+                    <div class="metric-val">3</div>
+                    <div class="metric-sub">3 zonas monitorizadas</div>
+                </div>
+                <div class="metric g">
+                    <div class="metric-lbl">Online</div>
+                    <div class="metric-val green">3/3</div>
+                    <div class="metric-sub">100% disponíveis</div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <p class="section-label">Gestão de Sensores</p>
+            <div class="table-card">
+                <div class="table-head">
+                    <span class="table-title">Sensores Registados</span>
+                    <span class="badge badge-green">3 Online</span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Zona</th>
+                            <th>Parâmetros</th>
+                            <th>Intervalo</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <div class="sensor-id">sensor-01</div>
+                                <div class="sensor-zone">ZONA_ESCOLAR</div>
+                            </td>
+                            <td>Zona Escolar</td>
+                            <td>
+                                <div class="params">
+                                    <span class="param">TEMP</span>
+                                    <span class="param">HUM</span>
+                                    <span class="param">RUÍDO</span>
+                                    <span class="param">LUM</span>
+                                </div>
+                            </td>
+                            <td><span class="interval">5s</span></td>
+                            <td><span class="status-online">ONLINE</span></td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="sensor-id">sensor-02</div>
+                                <div class="sensor-zone">ZONA_INDUSTRIAL</div>
+                            </td>
+                            <td>Zona Industrial</td>
+                            <td>
+                                <div class="params">
+                                    <span class="param">AR</span>
+                                    <span class="param">PM2.5</span>
+                                    <span class="param">PM10</span>
+                                    <span class="param">RUÍDO</span>
+                                </div>
+                            </td>
+                            <td><span class="interval">10s</span></td>
+                            <td><span class="status-online">ONLINE</span></td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="sensor-id">sensor-03</div>
+                                <div class="sensor-zone">ZONA_PARQUE</div>
+                            </td>
+                            <td>Zona Parque</td>
+                            <td>
+                                <div class="params">
+                                    <span class="param">TEMP</span>
+                                    <span class="param">HUM</span>
+                                    <span class="param">LUM</span>
+                                </div>
+                            </td>
+                            <td><span class="interval">30s</span></td>
+                            <td><span class="status-online">ONLINE</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="atividade">
+            <p class="section-label">Atividade Recente</p>
+            <div class="feed-grid">
+                <div class="feed-card">
+                    <div class="feed-header">
+                        <span class="feed-title">Feed de Eventos</span>
+                        <span class="badge badge-green">ao vivo</span>
+                    </div>
+                    <div class="feed-list" id="feed">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <footer>EcoMonitor  · Vila Real · Sistema de monitorização ambiental</footer>
+</body>
+</html>
