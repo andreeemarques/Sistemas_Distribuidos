@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: cp1252 -*-
 import grpc
 from concurrent import futures
 import preprocess_pb2

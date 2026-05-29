@@ -56,10 +56,10 @@ class Program
             mutex.WaitOne();
             try
             {
-                File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
+               // File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
                 Console.WriteLine("[DATA] Dado guardado!");
 
-                ProcessarFicheiro();
+                ProcessarFicheiro(header);
             }
             finally
             {
@@ -76,26 +76,17 @@ class Program
         client.Close();
     }
 
-    static void ProcessarFicheiro()
+    static void ProcessarFicheiro(string mensagem)
     {
         try
-        {
-            mutex.WaitOne();
-            try
-            {
-                string[] linhas = File.ReadAllLines("dados_recebidos.txt");
-
-                foreach (var linha in linhas)
-                {
-                    if (string.IsNullOrWhiteSpace(linha)) continue;
-
+        { 
                     try
                     {
-                        string[] partes = linha.Split(';');
+                        string[] partes = mensagem.Split(';');
 
                         string idSensor = partes[1];
                         string tipo = partes[3];
-                        double valor = double.Parse(partes[4]);
+                        double valor = double.Parse(partes[4], System.Globalization.CultureInfo.InvariantCulture);
 
                         using (var db = new AppDbContext())
                         {
@@ -128,12 +119,6 @@ class Program
                     {
                         Console.WriteLine("[DATA] Erro linha: " + e.Message);
                     }
-                }
-            }
-            finally
-            {
-                mutex.ReleaseMutex();
-            }
         }
         catch (Exception ex)
         {

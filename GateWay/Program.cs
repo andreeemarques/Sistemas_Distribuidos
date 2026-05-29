@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Grpc.Core;
+using Preprocessing;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -95,6 +97,39 @@ namespace Gateway
             Console.WriteLine("\nTodas as gateways ativas. Pressiona [Enter] para parar.\n");
             Console.ReadLine();
         }
+        static (bool valid, string normalizedValue, string unit) CallPreProcessing(string message)
+        {
+            string[] parts = message.Split(';');
+
+            try
+            {
+                // Grpc.Core — compatível com .NET Framework 4.7.2
+                var channel = new Channel("localhost", 50051, ChannelCredentials.Insecure);
+
+                var client = new PreProcessingService.PreProcessingServiceClient(channel);
+
+                var response = client.ProcessData(new SensorData
+                {
+                    Timestamp = parts[0],
+                    SensorId = parts[1],
+                    Zone = parts[2],
+                    Type = parts[3],
+                    Value = parts[4]
+                });
+
+                channel.ShutdownAsync().Wait();
+
+                if (!response.Valid)
+                    Console.WriteLine($"[RPC] Rejeitado: {response.ErrorMessage}");
+
+                return (response.Valid, response.NormalizedValue, response.Unit);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[RPC] Serviço indisponível, fallback: {ex.Message}");
+                return (true, parts[4], "");
+            }
+        }
 
         static void CorrerGateway(GatewayConfig config)
         {
@@ -105,9 +140,38 @@ namespace Gateway
                 var partes = mensagem.Split(';');
 
                 if (partes.Length == 5)
+                {
                     Console.WriteLine($"[{partes[0]}] {partes[1]} | {partes[2]}.{partes[3]} = {partes[4]}");
+
+                    // Chamada RPC de pré-processamento
+                    var (valid, normalizedValue, unit) = CallPreProcessing(mensagem);
+
+                    if (!valid)
+                    {
+                        Console.WriteLine($"[RPC] Dado rejeitado: {mensagem}");
+                        return; // substitui o 'continue' — estamos numa lambda
+                    }
+
+                    // Reconstruir mensagem com valor normalizado
+                    string mensagemNormalizada = $"{partes[0]};{partes[1]};{partes[2]};{partes[3]};{normalizedValue}";
+
+                    Console.WriteLine($"[RPC] Dado aceite: {mensagemNormalizada} {unit}");
+
+                    SendToServer(mensagemNormalizada);
+
+                    // Validar tipo
+                    if (!Parametros.Contains(partes[3]))
+                    {
+                        Console.WriteLine($"[AVISO] Tipo inválido: {partes[3]}");
+                        return;
+                    }
+
+                    SaveData(mensagemNormalizada);
+                }
                 else
+                {
                     Console.WriteLine($"[AVISO] Mensagem inesperada: {mensagem}");
+                }
             });
         }
 

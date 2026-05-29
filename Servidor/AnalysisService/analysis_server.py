@@ -1,4 +1,5 @@
 # analysis_server.py
+# -*- coding: cp1252 -*-
 import grpc
 from concurrent import futures
 import statistics
@@ -99,9 +100,9 @@ class AnalyzerServicer(analysis_pb2_grpc.AnalyzerServicer):
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     analysis_pb2_grpc.add_AnalyzerServicer_to_server(AnalyzerServicer(), server)
-    server.add_insecure_port('[::]:50051')
+    server.add_insecure_port('[::]:50052')
     server.start()
-    print("[ANALYSIS] Serviço de análise iniciado na porta 50051...")
+    print("[ANALYSIS] Serviço de análise iniciado na porta 50052...")
     server.wait_for_termination()
 
 if __name__ == '__main__':

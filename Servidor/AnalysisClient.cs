@@ -9,7 +9,7 @@ public class AnalysisClient
 
     public AnalysisClient()
     {
-        var channel = new Channel("localhost", 50051, ChannelCredentials.Insecure);
+        var channel = new Channel("localhost", 50052, ChannelCredentials.Insecure);
         _client = new Analyzer.AnalyzerClient(channel);
     }
 
