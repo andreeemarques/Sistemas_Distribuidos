@@ -8,17 +8,11 @@ import analysis_pb2_grpc
 
 class AnalyzerServicer(analysis_pb2_grpc.AnalyzerServicer):
 
-    def GetStatistics(self, request, context):
-        valores = list(request.valores)
-        if not valores:
-            return analysis_pb2.StatisticsResponse(media=0, minimo=0, maximo=0, desvio_padrao=0)
-
-        return analysis_pb2.StatisticsResponse(
-            media=statistics.mean(valores),
-            minimo=min(valores),
-            maximo=max(valores),
-            desvio_padrao=statistics.stdev(valores) if len(valores) > 1 else 0.0
-        )
+   def GetStatistics(self, request, context):
+    valores = list(request.valores)
+    return analysis_pb2.StatisticsResponse(
+        valor=valores[0] if valores else 0
+    )
 
     def DetectAnomalies(self, request, context):
         valores = list(request.valores)
@@ -97,13 +91,13 @@ class AnalyzerServicer(analysis_pb2_grpc.AnalyzerServicer):
         )
 
 
-def serve():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    analysis_pb2_grpc.add_AnalyzerServicer_to_server(AnalyzerServicer(), server)
-    server.add_insecure_port('[::]:50052')
-    server.start()
-    print("[ANALYSIS] Serviço de análise iniciado na porta 50052...")
-    server.wait_for_termination()
+    def serve():
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        analysis_pb2_grpc.add_AnalyzerServicer_to_server(AnalyzerServicer(), server)
+        server.add_insecure_port('[::]:50052')
+        server.start()
+        print("[ANALYSIS] Serviço de análise iniciado na porta 50052...")
+        server.wait_for_termination()
 
-if __name__ == '__main__':
-    serve()
+    if __name__ == '__main__':
+        serve()

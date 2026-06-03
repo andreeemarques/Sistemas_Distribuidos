@@ -16,5 +16,7 @@ namespace Servidor.Data
         public DbSet<Sensor> Sensores { get; set; }
         public DbSet<Leitura> Leituras { get; set; }
 
+        public DbSet<ResultadoAnalise> ResultadosAnalise { get; set; }
+
     }
 }

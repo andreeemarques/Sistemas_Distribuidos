@@ -17,10 +17,7 @@ message StatisticsRequest {
 }
 
 message StatisticsResponse {
-  double media = 1;
-  double minimo = 2;
-  double maximo = 3;
-  double desvio_padrao = 4;
+  double valor = 1;
 }
 
 message AnomalyRequest {

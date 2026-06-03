@@ -80,45 +80,45 @@ class Program
     {
         try
         { 
-                    try
+            try
+            {
+                string[] partes = mensagem.Split(';');
+
+                string idSensor = partes[1];
+                string tipo = partes[3];
+                double valor = double.Parse(partes[4], System.Globalization.CultureInfo.InvariantCulture);
+
+                using (var db = new AppDbContext())
+                {
+                    var sensor = db.Sensores.Find(idSensor);
+
+                    if (sensor == null)
                     {
-                        string[] partes = mensagem.Split(';');
-
-                        string idSensor = partes[1];
-                        string tipo = partes[3];
-                        double valor = double.Parse(partes[4], System.Globalization.CultureInfo.InvariantCulture);
-
-                        using (var db = new AppDbContext())
-                        {
-                            var sensor = db.Sensores.Find(idSensor);
-
-                            if (sensor == null)
-                            {
-                                sensor = new Sensor { IdSensor = idSensor };
-                                db.Sensores.Add(sensor);
-                            }
-
-                            db.Leituras.Add(new Leitura
-                            {
-                                IdSensor = idSensor,
-                                Tipo = tipo,
-                                Valor = valor,
-                                DataHora = DateTime.Now
-                            });
-
-                            db.SaveChanges();
-                        }
-
-                        Console.WriteLine("[DATA] Inserido na BD!");
-
-                        AnalisarDados(idSensor, tipo, valor); // NOVO
-
-                        File.WriteAllText("dados_recebidos.txt", "");
+                        sensor = new Sensor { IdSensor = idSensor };
+                        db.Sensores.Add(sensor);
                     }
-                    catch (Exception e)
+
+                    db.Leituras.Add(new Leitura
                     {
-                        Console.WriteLine("[DATA] Erro linha: " + e.Message);
-                    }
+                        IdSensor = idSensor,
+                        Tipo = tipo,
+                        Valor = valor,
+                        DataHora = DateTime.Now
+                    });
+
+                    db.SaveChanges();
+                }
+
+                Console.WriteLine("[DATA] Inserido na BD!");
+
+                AnalisarDados(idSensor, tipo, valor); // NOVO
+
+                File.WriteAllText("dados_recebidos.txt", "");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("[DATA] Erro linha: " + e.Message);
+            }
         }
         catch (Exception ex)
         {
@@ -136,17 +136,42 @@ class Program
             var valores = new List<double> { valor };
 
             // Análise estatística
-            analysisClient.GetStatistics(idSensor, tipo, valores);
+            var stats = analysisClient.GetStatistics(idSensor, tipo, valores);
 
-            // Deteção de padrões de poluição
+
+            // Deteção de anomalias
             var anomalia = analysisClient.DetectAnomalies(idSensor, tipo, valores);
             if (anomalia != null && anomalia.AnomaliaDetetada)
                 Console.WriteLine($"[RPC] Poluição detetada no sensor {idSensor}: {anomalia.Descricao}");
 
-            // Previsão de riscos para a saúde pública
+            // Previsão de riscos
             var risco = analysisClient.PredictHealthRisk(idSensor, new List<string> { tipo }, valores);
             if (risco != null)
                 Console.WriteLine($"[RPC] Risco saúde pública: {risco.NivelRisco} — {risco.Descricao}");
+
+            // Guardar na BD
+            using (var db = new AppDbContext())
+            {
+                db.ResultadosAnalise.Add(new ResultadoAnalise
+                {
+                    IdSensor = idSensor,
+                    Tipo = tipo,
+                    DataHora = DateTime.Now,
+                    Valor = valor != null ? valor : 0,
+
+                    // Anomalia
+                    AnomaliaDetetada = anomalia != null && anomalia.AnomaliaDetetada,
+                    DescricaoAnomalia = anomalia != null ? anomalia.Descricao : "Sem dados",
+
+                    // Risco
+                    NivelRisco = risco != null ? risco.NivelRisco : "DESCONHECIDO",
+                    DescricaoRisco = risco != null ? risco.Descricao : "Sem dados",
+                    Recomendacoes = risco != null ? string.Join("|", risco.Recomendacoes) : ""
+                });
+
+                db.SaveChanges();
+                Console.WriteLine("[DATA] Resultado de análise guardado na BD!");
+            }
         }
         catch (Exception e)
         {
