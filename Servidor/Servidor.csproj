@@ -156,6 +156,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="dashboard\index.html" />
+    <Content Include="dashboard\Mapa_Vila.png" />
     <Content Include="dashboard\style.css" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

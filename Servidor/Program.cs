@@ -129,6 +129,94 @@ class Program
                     continue;
                 }
 
+                if (path == "/api/graficos")
+                {
+                    try
+                    {
+                        List<object> leituras = new List<object>();
+                        Dictionary<string, int> porTipo = new Dictionary<string, int>();
+
+                        using (var db = new AppDbContext())
+                        {
+                            var resultados = db.ResultadosAnalise
+                                .OrderBy(r => r.DataHora)
+                                .ToList();
+
+                            foreach (var r in resultados)
+                            {
+                                if (!porTipo.ContainsKey(r.Tipo)) porTipo[r.Tipo] = 0;
+                                porTipo[r.Tipo]++;
+
+                                leituras.Add(new
+                                {
+                                    hora = r.DataHora.ToString("HH:mm:ss"),
+                                    valor = r.Valor,
+                                    tipo = r.Tipo,
+                                    anomalia = r.AnomaliaDetetada,
+                                    nivelRisco = r.NivelRisco
+                                });
+                            }
+                        }
+
+                        var sb = new StringBuilder();
+                        sb.Append("{");
+
+                        sb.Append("\"porTipo\":{");
+                        bool first = true;
+                        foreach (var kv in porTipo)
+                        {
+                            if (!first) sb.Append(",");
+                            sb.Append($"\"{kv.Key}\":{kv.Value}");
+                            first = false;
+                        }
+                        sb.Append("},");
+
+                        sb.Append("\"leituras\":[");
+                        for (int i = 0; i < leituras.Count; i++)
+                        {
+                            var r = (dynamic)leituras[i];
+                            if (i > 0) sb.Append(",");
+                            sb.Append("{");
+                            sb.Append($"\"hora\":\"{r.hora}\",");
+                            sb.Append($"\"valor\":{((double)r.valor).ToString(System.Globalization.CultureInfo.InvariantCulture)},");
+                            sb.Append($"\"tipo\":\"{r.tipo}\",");
+                            sb.Append($"\"anomalia\":{((bool)r.anomalia).ToString().ToLower()},");
+                            sb.Append($"\"nivelRisco\":\"{r.nivelRisco}\"");
+                            sb.Append("}");
+                        }
+                        sb.Append("]}");
+
+                        byte[] bytes = Encoding.UTF8.GetBytes(sb.ToString());
+                        context.Response.ContentType = "application/json";
+                        context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+                        context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("[WEB] Erro graficos: " + ex.Message);
+                        byte[] bytes = Encoding.UTF8.GetBytes("{\"porTipo\":{},\"leituras\":[]}");
+                        context.Response.ContentType = "application/json";
+                        context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                    }
+                    context.Response.Close();
+                    continue;
+                }
+
+                if (path == "/Mapa_Vila.png")
+                {
+                    string imgPath = Path.Combine(basePath, "dashboard", "Mapa_Vila.png");
+
+                    byte[] img = File.ReadAllBytes(imgPath);
+
+                    context.Response.ContentType = "image/png";
+
+                    context.Response.OutputStream.Write(img, 0, img.Length);
+
+                    context.Response.Close();
+
+                    continue;
+                }
+
                 if (path == "/")
                 {
                     string htmlPath = Path.Combine(basePath, "dashboard", "index.html");
