@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Remoting.Messaging;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 class Program
@@ -34,6 +35,19 @@ class Program
             Thread t = new Thread(() => HandleClient(client));
             t.Start();
         }
+    }
+
+    static List<ResultadoAnalise> _resultados = new List<ResultadoAnalise>();
+    static Mutex resultadosMutex = new Mutex();
+
+    public static void AdicionarResultado(ResultadoAnalise r)
+    {
+        resultadosMutex.WaitOne();
+        {
+            _resultados.Insert(0, r);
+            if (_resultados.Count > 50) _resultados.RemoveAt(_resultados.Count - 1);
+        }
+        resultadosMutex.ReleaseMutex();
     }
 
     static void StartWebServer()
@@ -75,10 +89,35 @@ class Program
                     continue;
                 }
 
-                string htmlPath = "";
+                if (path == "/api/resultados")
+                {
+                    resultadosMutex.WaitOne();
+                    {
+                        string json = System.Text.Json.JsonSerializer.Serialize(_resultados);
+                        byte[] bytes = Encoding.UTF8.GetBytes(json);
+                        context.Response.ContentType = "application/json";
+                        context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+                        context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                    }
+                    resultadosMutex.ReleaseMutex();
+                    context.Response.Close();
+                    continue;
+                }
 
                 if (path == "/")
-                    htmlPath = Path.Combine(basePath, "dashboard", "index.html");
+                {
+                    string htmlPath = Path.Combine(basePath, "dashboard", "index.html");
+
+                    string html = File.ReadAllText(htmlPath);
+
+                    byte[] data = Encoding.UTF8.GetBytes(html);
+
+                    context.Response.ContentType = "text/html";
+
+                    context.Response.ContentLength64 = data.Length;
+
+                    context.Response.OutputStream.Write(data, 0, data.Length);
+                }
 
                 context.Response.Close();
             }

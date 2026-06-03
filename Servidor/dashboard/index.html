@@ -132,5 +132,37 @@
     </div>
 
     <footer>EcoMonitor  · Vila Real · Sistema de monitorização ambiental</footer>
+
+    <script>
+    async function atualizarFeed() {
+    try {
+            const res = await fetch('/api/resultados');
+            const dados = await res.json();
+            const list = document.getElementById('feed');
+            list.innerHTML = '';
+            dados.forEach(r => {
+              const nivel = (r.nivelRisco || '').toUpperCase();
+              const isCrit = nivel === 'ALTO';
+              const isWarn = nivel === 'MEDIO';
+              const hora = new Date(r.dataHora).toLocaleTimeString('pt-PT');
+              const item = document.createElement('div');
+              item.className = 'feed-item';
+              item.innerHTML = `
+                <div class="feed-time">${hora}</div>
+                <div class="feed-text">
+                  <strong>${r.idSensor}</strong> · ${r.tipo} ·
+                  média: <strong>${r.valor?.toFixed(1)}</strong>
+                  ${isCrit ? `<span class="crit">⚠ ${r.descricaoRisco}</span>` : ''}
+                  ${isWarn ? `<span class="warn">⚠ ${r.descricaoRisco}</span>` : ''}
+                  ${!isCrit && !isWarn && r.descricaoRisco ? r.descricaoRisco : ''}
+                </div>`;
+              list.appendChild(item);
+            });
+          } catch(e) {}
+    }
+
+        atualizarFeed();
+        setInterval(atualizarFeed, 3000);
+    </script>
 </body>
 </html>
