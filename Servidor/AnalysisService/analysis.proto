@@ -16,13 +16,6 @@ message StatisticsRequest {
   repeated double valores = 3;
 }
 
-message StatisticsResponse {
-  double media = 1;
-  double minimo = 2;
-  double maximo = 3;
-  double desvio_padrao = 4;
-}
-
 message AnomalyRequest {
   string sensor_id = 1;
   string tipo = 2;
