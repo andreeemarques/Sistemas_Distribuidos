@@ -42,6 +42,10 @@ namespace Gateway
             videoThread.IsBackground = true;
             videoThread.Start();
 
+            Thread dataSenderThread = new Thread(() => DataSender(15));
+            dataSenderThread.IsBackground = true;
+            dataSenderThread.Start();
+
             if (args.Length > 0)
             {
                 string id = args[0];
@@ -146,8 +150,6 @@ namespace Gateway
 
                     Console.WriteLine($"[RPC] Dado aceite: {mensagemNormalizada} {unit}");
 
-                    SendToServer(mensagemNormalizada);
-
                     if (!Parametros.Contains(partes[3]))
                     {
                         Console.WriteLine($"[AVISO] Tipo inválido: {partes[3]}");
@@ -161,6 +163,61 @@ namespace Gateway
                     Console.WriteLine($"[AVISO] Mensagem inesperada: {mensagem}");
                 }
             });
+        }
+
+        static void DataSender(int intervalSeconds)
+        {
+            while (true)
+            {
+                Thread.Sleep(intervalSeconds * 1000);
+
+                string[] files = Directory.GetFiles("Data", "*.txt");
+
+                foreach (string file in files)
+                {
+                    Mutex m = GetFileMutex(file);
+                    m.WaitOne();
+                    string[] lines;
+                    try
+                    {
+                        lines = File.ReadAllLines(file);
+                    }
+                    finally
+                    {
+                        m.ReleaseMutex();
+                    }
+
+                    if (lines == null || lines.Length == 0) continue;
+
+                    Console.WriteLine($"[DATA] A enviar {lines.Length} linha(s) de {file}...");
+                    List<string> falhas = new List<string>();
+
+                    foreach (string line in lines)
+                    {
+                        if (!string.IsNullOrWhiteSpace(line))
+                        {
+                            bool sucesso = SendToServer(line);
+                            if (!sucesso)
+                                falhas.Add(line);
+                        }
+                    }
+
+                    m.WaitOne();
+                    try
+                    {
+                        if (falhas.Count == 0)
+                            File.WriteAllText(file, "");
+                        else
+                            File.WriteAllLines(file, falhas);
+                    }
+                    finally
+                    {
+                        m.ReleaseMutex();
+                    }
+                }
+
+                Console.WriteLine("[DATA] Envio concluído.");
+            }
         }
 
         static void SendResponse(NetworkStream stream, string message)
