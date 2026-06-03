@@ -8,17 +8,20 @@ import analysis_pb2_grpc
 
 class AnalyzerServicer(analysis_pb2_grpc.AnalyzerServicer):
 
-   def GetStatistics(self, request, context):
-    valores = list(request.valores)
-    return analysis_pb2.StatisticsResponse(
-        valor=valores[0] if valores else 0
-    )
+    def GetStatistics(self, request, context):
+        valores = list(request.valores)
+        if not valores:
+            return analysis_pb2.StatisticsResponse(minimo=0, maximo=0, media=0)
+        return analysis_pb2.StatisticsResponse(
+            minimo=min(valores),
+            maximo=max(valores),
+            media=statistics.mean(valores)
+        )
 
     def DetectAnomalies(self, request, context):
         valores = list(request.valores)
         tipo = request.tipo.lower()
 
-        # Limites aceitáveis por tipo de sensor
         limites = {
             "temperatura": (0, 45),
             "humidade":    (10, 95),
@@ -58,27 +61,27 @@ class AnalyzerServicer(analysis_pb2_grpc.AnalyzerServicer):
 
             if t == "pm2.5" and valor > 55:
                 nivel = "ALTO"
-                descricao = f"PM2.5 elevado ({valor} µg/m³): risco respiratório."
+                descricao = f"PM2.5 elevado ({valor}  g/m ): risco respiratório."
                 recomendacoes.append("Evitar exposição prolongada ao ar livre.")
                 recomendacoes.append("Usar máscara de proteção respiratória.")
 
             elif t == "no2" and valor > 150:
                 nivel = "ALTO"
-                descricao = f"NO2 elevado ({valor} µg/m³): risco para grupos vulneráveis."
+                descricao = f"NO2 elevado ({valor}  g/m ): risco para grupos vulneráveis."
                 recomendacoes.append("Grupos vulneráveis devem permanecer em casa.")
                 recomendacoes.append("Evitar zonas de tráfego intenso.")
 
             elif t == "temperatura" and valor > 40:
                 if nivel != "ALTO":
                     nivel = "MEDIO"
-                descricao = f"Temperatura elevada ({valor}°C): risco de golpe de calor."
+                descricao = f"Temperatura elevada ({valor} C): risco de golpe de calor."
                 recomendacoes.append("Manter-se hidratado.")
                 recomendacoes.append("Evitar exposição ao sol nas horas de maior calor.")
 
             elif t == "ruido" and valor > 80:
                 if nivel != "ALTO":
                     nivel = "MEDIO"
-                descricao = f"Ruído elevado ({valor} dB): risco auditivo."
+                descricao = f"Ru do elevado ({valor} dB): risco auditivo."
                 recomendacoes.append("Usar proteção auditiva em zonas afetadas.")
 
         if not recomendacoes:
@@ -91,13 +94,14 @@ class AnalyzerServicer(analysis_pb2_grpc.AnalyzerServicer):
         )
 
 
-    def serve():
-        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-        analysis_pb2_grpc.add_AnalyzerServicer_to_server(AnalyzerServicer(), server)
-        server.add_insecure_port('[::]:50052')
-        server.start()
-        print("[ANALYSIS] Serviço de análise iniciado na porta 50052...")
-        server.wait_for_termination()
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    analysis_pb2_grpc.add_AnalyzerServicer_to_server(AnalyzerServicer(), server)
+    server.add_insecure_port('[::]:50052')
+    server.start()
+    print("[ANALYSIS] Serviço de análise iniciado na porta 50052...")
+    server.wait_for_termination()
 
-    if __name__ == '__main__':
-        serve()
+
+if __name__ == '__main__':
+    serve()

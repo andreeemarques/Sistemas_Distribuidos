@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x61nalysis.proto\x12\x08\x61nalysis\"E\n\x11StatisticsRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x0c\n\x04tipo\x18\x02 \x01(\t\x12\x0f\n\x07valores\x18\x03 \x03(\x01\"#\n\x12StatisticsResponse\x12\r\n\x05valor\x18\x01 \x01(\x01\"B\n\x0e\x41nomalyRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x0c\n\x04tipo\x18\x02 \x01(\t\x12\x0f\n\x07valores\x18\x03 \x03(\x01\"Y\n\x0f\x41nomalyResponse\x12\x19\n\x11\x61nomalia_detetada\x18\x01 \x01(\x08\x12\x18\n\x10valores_anomalos\x18\x02 \x03(\x01\x12\x11\n\tdescricao\x18\x03 \x01(\t\"F\n\x11HealthRiskRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\r\n\x05tipos\x18\x02 \x03(\t\x12\x0f\n\x07valores\x18\x03 \x03(\x01\"S\n\x12HealthRiskResponse\x12\x13\n\x0bnivel_risco\x18\x01 \x01(\t\x12\x11\n\tdescricao\x18\x02 \x01(\t\x12\x15\n\rrecomendacoes\x18\x03 \x03(\t2\xee\x01\n\x08\x41nalyzer\x12J\n\rGetStatistics\x12\x1b.analysis.StatisticsRequest\x1a\x1c.analysis.StatisticsResponse\x12\x46\n\x0f\x44\x65tectAnomalies\x12\x18.analysis.AnomalyRequest\x1a\x19.analysis.AnomalyResponse\x12N\n\x11PredictHealthRisk\x12\x1b.analysis.HealthRiskRequest\x1a\x1c.analysis.HealthRiskResponseB\x12\xaa\x02\x0f\x41nalysisServiceb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x61nalysis.proto\x12\x08\x61nalysis\"E\n\x11StatisticsRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x0c\n\x04tipo\x18\x02 \x01(\t\x12\x0f\n\x07valores\x18\x03 \x03(\x01\"C\n\x12StatisticsResponse\x12\x0e\n\x06minimo\x18\x01 \x01(\x01\x12\x0e\n\x06maximo\x18\x02 \x01(\x01\x12\r\n\x05media\x18\x03 \x01(\x01\"B\n\x0e\x41nomalyRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x0c\n\x04tipo\x18\x02 \x01(\t\x12\x0f\n\x07valores\x18\x03 \x03(\x01\"Y\n\x0f\x41nomalyResponse\x12\x19\n\x11\x61nomalia_detetada\x18\x01 \x01(\x08\x12\x18\n\x10valores_anomalos\x18\x02 \x03(\x01\x12\x11\n\tdescricao\x18\x03 \x01(\t\"F\n\x11HealthRiskRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\r\n\x05tipos\x18\x02 \x03(\t\x12\x0f\n\x07valores\x18\x03 \x03(\x01\"S\n\x12HealthRiskResponse\x12\x13\n\x0bnivel_risco\x18\x01 \x01(\t\x12\x11\n\tdescricao\x18\x02 \x01(\t\x12\x15\n\rrecomendacoes\x18\x03 \x03(\t2\xee\x01\n\x08\x41nalyzer\x12J\n\rGetStatistics\x12\x1b.analysis.StatisticsRequest\x1a\x1c.analysis.StatisticsResponse\x12\x46\n\x0f\x44\x65tectAnomalies\x12\x18.analysis.AnomalyRequest\x1a\x19.analysis.AnomalyResponse\x12N\n\x11PredictHealthRisk\x12\x1b.analysis.HealthRiskRequest\x1a\x1c.analysis.HealthRiskResponseB\x12\xaa\x02\x0f\x41nalysisServiceb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,15 +35,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STATISTICSREQUEST']._serialized_start=28
   _globals['_STATISTICSREQUEST']._serialized_end=97
   _globals['_STATISTICSRESPONSE']._serialized_start=99
-  _globals['_STATISTICSRESPONSE']._serialized_end=134
-  _globals['_ANOMALYREQUEST']._serialized_start=136
-  _globals['_ANOMALYREQUEST']._serialized_end=202
-  _globals['_ANOMALYRESPONSE']._serialized_start=204
-  _globals['_ANOMALYRESPONSE']._serialized_end=293
-  _globals['_HEALTHRISKREQUEST']._serialized_start=295
-  _globals['_HEALTHRISKREQUEST']._serialized_end=365
-  _globals['_HEALTHRISKRESPONSE']._serialized_start=367
-  _globals['_HEALTHRISKRESPONSE']._serialized_end=450
-  _globals['_ANALYZER']._serialized_start=453
-  _globals['_ANALYZER']._serialized_end=691
+  _globals['_STATISTICSRESPONSE']._serialized_end=166
+  _globals['_ANOMALYREQUEST']._serialized_start=168
+  _globals['_ANOMALYREQUEST']._serialized_end=234
+  _globals['_ANOMALYRESPONSE']._serialized_start=236
+  _globals['_ANOMALYRESPONSE']._serialized_end=325
+  _globals['_HEALTHRISKREQUEST']._serialized_start=327
+  _globals['_HEALTHRISKREQUEST']._serialized_end=397
+  _globals['_HEALTHRISKRESPONSE']._serialized_start=399
+  _globals['_HEALTHRISKRESPONSE']._serialized_end=482
+  _globals['_ANALYZER']._serialized_start=485
+  _globals['_ANALYZER']._serialized_end=723
 # @@protoc_insertion_point(module_scope)
