@@ -17,7 +17,9 @@ message StatisticsRequest {
 }
 
 message StatisticsResponse {
-  double valor = 1;
+  double minimo = 1;
+  double maximo = 2;
+  double media  = 3;
 }
 
 message AnomalyRequest {

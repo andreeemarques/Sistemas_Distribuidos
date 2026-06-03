@@ -1,0 +1,350 @@
+﻿<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoMonitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav>
+        <div class="nav-brand">
+            <span class="brand-dot"></span>
+            EcoMonitor
+        </div>
+        <ul class="nav-links">
+            <li><a href="#sensores" class="active">Sensores</a></li>
+            <li><a href="#graficos">Gráficos</a></li>
+            <li><a href="#atividade">Atividade</a></li>
+        </ul>
+        <div class="nav-status">
+            <div class="pulse-dot"></div>
+            Servidor ativo
+        </div>
+    </nav>
+
+    <div class="page">
+
+        <section id="sensores">
+            <p class="section-label">Visão Geral</p>
+            <div class="metrics-grid">
+                <div class="metric g">
+                    <div class="metric-lbl">Total Sensores</div>
+                    <div class="metric-val">3</div>
+                    <div class="metric-sub">3 zonas monitorizadas</div>
+                </div>
+                <div class="metric g">
+                    <div class="metric-lbl">Online</div>
+                    <div class="metric-val green">3/3</div>
+                    <div class="metric-sub">100% disponíveis</div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <p class="section-label">Gestão de Sensores</p>
+            <div class="table-card">
+                <div class="table-head">
+                    <span class="table-title">Sensores Registados</span>
+                    <span class="badge badge-green">3 Online</span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Zona</th>
+                            <th>Parâmetros</th>
+                            <th>Intervalo</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <div class="sensor-id">sensor-01</div>
+                                <div class="sensor-zone">ZONA_ESCOLAR</div>
+                            </td>
+                            <td>Zona Escolar</td>
+                            <td>
+                                <div class="params">
+                                    <span class="param">TEMP</span>
+                                    <span class="param">HUM</span>
+                                    <span class="param">RUÍDO</span>
+                                    <span class="param">LUM</span>
+                                </div>
+                            </td>
+                            <td><span class="interval">5s</span></td>
+                            <td><span class="status-online">ONLINE</span></td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="sensor-id">sensor-02</div>
+                                <div class="sensor-zone">ZONA_INDUSTRIAL</div>
+                            </td>
+                            <td>Zona Industrial</td>
+                            <td>
+                                <div class="params">
+                                    <span class="param">AR</span>
+                                    <span class="param">PM2.5</span>
+                                    <span class="param">PM10</span>
+                                    <span class="param">RUÍDO</span>
+                                </div>
+                            </td>
+                            <td><span class="interval">10s</span></td>
+                            <td><span class="status-online">ONLINE</span></td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="sensor-id">sensor-03</div>
+                                <div class="sensor-zone">ZONA_PARQUE</div>
+                            </td>
+                            <td>Zona Parque</td>
+                            <td>
+                                <div class="params">
+                                    <span class="param">TEMP</span>
+                                    <span class="param">HUM</span>
+                                    <span class="param">LUM</span>
+                                </div>
+                            </td>
+                            <td><span class="interval">30s</span></td>
+                            <td><span class="status-online">ONLINE</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="graficos">
+            <p class="section-label">Análise de Dados</p>
+            <div class="charts-grid">
+
+                <div class="chart-card">
+                    <div class="chart-head">
+                        <span class="chart-title">Distribuição por Tipo</span>
+                        <span class="badge badge-green">anel</span>
+                    </div>
+                    <div class="chart-legend" id="donut-legend"></div>
+                    <div class="chart-body">
+                        <canvas id="donutChart" role="img" aria-label="Gráfico em anel da distribuição de tipos de dados enviados pelos sensores">Sem dados ainda.</canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-head">
+                        <span class="chart-title">Leituras ao Longo do Tempo</span>
+                        <span class="badge badge-blue">área</span>
+                    </div>
+                    <div class="chart-legend" id="area-legend"></div>
+                    <div class="chart-body">
+                        <canvas id="areaChart" role="img" aria-label="Gráfico de área com todas as leituras dos sensores ao longo do tempo">Sem dados ainda.</canvas>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <section id="atividade">
+            <p class="section-label">Monitorização em Tempo Real</p>
+
+            <div class="monitor-grid">
+
+                <div class="map-card">
+                    <div class="feed-header">
+                        <span class="feed-title">Localização dos Sensores</span>
+                        <span class="badge badge-blue">mapa</span>
+                    </div>
+
+                    <div class="map-wrapper">
+
+                        <img src="./Mapa_Vila.png"
+                             alt="Mapa de Vila Real"
+                             class="sensor-map">
+
+                        <div class="sensor-marker sensor-1">
+                            <span>01</span>
+                        </div>
+
+                        <div class="sensor-marker sensor-2">
+                            <span>02</span>
+                        </div>
+
+                        <div class="sensor-marker sensor-3">
+                            <span>03</span>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="feed-card">
+                    <div class="feed-header">
+                        <span class="feed-title">Feed de Eventos</span>
+                        <span class="badge badge-green">ao vivo</span>
+                    </div>
+
+                    <div class="feed-list" id="feed"></div>
+                </div>
+
+            </div>
+        </section>
+
+    </div>
+
+    <footer>EcoMonitor · Vila Real · Sistema de monitorização ambiental</footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+    <script>
+        const PALETTE = ['#1D9E75', '#185FA5', '#BA7517', '#E24B4A', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+        let donutInst = null, areaInst = null;
+
+        function buildLegend(elId, labels, colors) {
+            const el = document.getElementById(elId);
+            el.innerHTML = labels.map((l, i) =>
+                `<span class="legend-item"><span class="legend-dot" style="background:${colors[i % colors.length]}"></span>${l}</span>`
+            ).join('');
+        }
+
+        function renderDonut(porTipo) {
+            const labels = Object.keys(porTipo);
+            const values = Object.values(porTipo);
+            const colors = labels.map((_, i) => PALETTE[i % PALETTE.length]);
+            const total = values.reduce((a, b) => a + b, 0);
+
+            buildLegend('donut-legend',
+                labels.map((l, i) => `${l} ${Math.round(values[i] / total * 100)}%`),
+                colors
+            );
+
+            if (donutInst) donutInst.destroy();
+            donutInst = new Chart(document.getElementById('donutChart'), {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors,
+                        borderWidth: 2,
+                        borderColor: '#ffffff',
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '62%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.label}: ${ctx.raw} leituras (${Math.round(ctx.raw / total * 100)}%)`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderArea(leituras) {
+            const tipos = [...new Set(leituras.map(l => l.tipo))];
+            const labels = leituras.map(l => l.hora);
+
+            function hex2rgba(h, a) {
+                const r = parseInt(h.slice(1, 3), 16);
+                const g = parseInt(h.slice(3, 5), 16);
+                const b = parseInt(h.slice(5, 7), 16);
+                return `rgba(${r},${g},${b},${a})`;
+            }
+
+            const datasets = tipos.map((tipo, i) => {
+                const color = PALETTE[i % PALETTE.length];
+                return {
+    label: tipo,
+    data: leituras.map(l => l.tipo === tipo ? l.valor : null),
+    borderColor: color,
+    backgroundColor: color,
+    fill: false,
+    borderWidth: 3,
+    tension: 0.2,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    pointBackgroundColor: color,
+    pointBorderColor: '#fff',
+    pointBorderWidth: 2,
+    spanGaps: true
+};
+            });
+
+            buildLegend('area-legend', tipos, tipos.map((_, i) => PALETTE[i % PALETTE.length]));
+
+            if (areaInst) areaInst.destroy();
+            areaInst = new Chart(document.getElementById('areaChart'), {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            ticks: {
+                                font: { family: "'Space Mono', monospace", size: 10 },
+                                maxRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 12
+                            },
+                            grid: { color: 'rgba(0,0,0,0.04)' }
+                        },
+                        y: {
+                            ticks: { font: { size: 11 } },
+                            grid: { color: 'rgba(0,0,0,0.04)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function atualizarFeed() {
+            try {
+                const res = await fetch('/api/resultados');
+                const dados = await res.json();
+                const list = document.getElementById('feed');
+                list.innerHTML = '';
+                dados.forEach(r => {
+                    const nivel = (r.nivelRisco || '').toUpperCase();
+                    const isCrit = nivel === 'ALTO';
+                    const isWarn = nivel === 'MEDIO';
+                    const hora = new Date(r.dataHora).toLocaleTimeString('pt-PT');
+                    const item = document.createElement('div');
+                    item.className = 'feed-item';
+                    item.innerHTML = `
+                            <div class="feed-time">${hora}</div>
+                            <div class="feed-text">
+                                <strong>${r.idSensor}</strong> · ${r.tipo} ·
+                                valor: <strong>${(r.valor || 0).toFixed(1)}</strong>
+                                ${isCrit ? `<span class="crit">⚠ ${r.descricaoRisco}</span>` : ''}
+                                ${isWarn ? `<span class="warn">⚠ ${r.descricaoRisco}</span>` : ''}
+                                ${!isCrit && !isWarn && r.descricaoRisco ? r.descricaoRisco : ''}
+                            </div>`;
+                    list.appendChild(item);
+                });
+            } catch (e) { }
+        }
+
+        async function atualizarGraficos() {
+            try {
+                const res = await fetch('/api/graficos');
+                const dados = await res.json();
+                if (Object.keys(dados.porTipo).length > 0) renderDonut(dados.porTipo);
+                if (dados.leituras.length > 0) renderArea(dados.leituras);
+            } catch (e) { }
+        }
+
+        atualizarFeed();
+        atualizarGraficos();
+        setInterval(atualizarFeed, 3000);
+        setInterval(atualizarGraficos, 10000);
+    </script>
+</body>
+</html>
