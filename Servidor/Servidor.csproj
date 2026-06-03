@@ -104,9 +104,9 @@
     <Compile Include="AnalysisClient.cs" />
     <Compile Include="AnalysisGrpc.cs" />
     <Compile Include="Data\DbContext.cs" />
-    <Compile Include="Migrations\202605291120263_First_migration.cs" />
-    <Compile Include="Migrations\202605291120263_First_migration.Designer.cs">
-      <DependentUpon>202605291120263_First_migration.cs</DependentUpon>
+    <Compile Include="Migrations\202605291129295_InitialCreate.cs" />
+    <Compile Include="Migrations\202605291129295_InitialCreate.Designer.cs">
+      <DependentUpon>202605291129295_InitialCreate.cs</DependentUpon>
     </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\Leitura.cs" />
@@ -126,8 +126,8 @@
     <Content Include="AnalysisService\analysis_server.py" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Migrations\202605291120263_First_migration.resx">
-      <DependentUpon>202605291120263_First_migration.cs</DependentUpon>
+    <EmbeddedResource Include="Migrations\202605291129295_InitialCreate.resx">
+      <DependentUpon>202605291129295_InitialCreate.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
