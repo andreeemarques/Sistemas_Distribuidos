@@ -24,7 +24,6 @@ namespace Servidor.Models
         [Required]
         public double Valor { get; set; }
 
-        // Relação (FK)
         [ForeignKey("IdSensor")]
         public virtual Sensor Sensor { get; set; }
     }

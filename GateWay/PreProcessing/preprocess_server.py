@@ -4,7 +4,6 @@ from concurrent import futures
 import preprocess_pb2
 import preprocess_pb2_grpc
 
-# Gamas válidas por tipo de sensor
 RANGES = {
     "TEMP":  (-30, 60),
     "HUM":   (0, 100),
@@ -15,7 +14,6 @@ RANGES = {
     "AR":    (0, 500),
 }
 
-# Unidades por tipo
 UNITS = {
     "TEMP":  "C",
     "HUM":   "%",
@@ -31,7 +29,6 @@ class PreProcessingServicer(preprocess_pb2_grpc.PreProcessingServiceServicer):
     def ProcessData(self, request, context):
         print(f"[RPC] Recebido: sensor={request.sensor_id} tipo={request.type} valor={request.value}")
 
-        # 1. Validar se o valor é numérico
         try:
             value = float(request.value)
         except ValueError:
@@ -41,7 +38,6 @@ class PreProcessingServicer(preprocess_pb2_grpc.PreProcessingServiceServicer):
                 error_message=f"Valor nao numerico: '{request.value}'"
             )
 
-        # 2. Verificar gama válida
         if request.type in RANGES:
             min_v, max_v = RANGES[request.type]
             if not (min_v <= value <= max_v):
@@ -51,7 +47,6 @@ class PreProcessingServicer(preprocess_pb2_grpc.PreProcessingServiceServicer):
                     error_message=f"{request.type} fora do intervalo [{min_v}, {max_v}]"
                 )
 
-        # 3. Normalizar: arredondar a 2 casas decimais
         normalized = round(value, 2)
         unit = UNITS.get(request.type, "")
 

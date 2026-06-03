@@ -117,8 +117,6 @@ namespace Sensor
         }
 
 
-        // VIDEO
-
         static volatile bool _videoRunning = false;
         static volatile bool _canStream = false;
 
@@ -206,7 +204,6 @@ namespace Sensor
             string header = $"FRAME;{sensorId};{frameIndex};{timestamp};{frameData.Length}\n";
             byte[] headerBytes = Encoding.UTF8.GetBytes(header);
 
-            // header e frame 
             byte[] pacote = new byte[headerBytes.Length + frameData.Length];
             Buffer.BlockCopy(headerBytes, 0, pacote, 0, headerBytes.Length);
             Buffer.BlockCopy(frameData, 0, pacote, headerBytes.Length, frameData.Length);

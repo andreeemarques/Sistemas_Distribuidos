@@ -15,7 +15,6 @@ namespace Gateway
 {
     class Program
     {
-        // Um mutex por ficheiro para garantir acesso sequencial
         static Dictionary<string, Mutex> fileMutexes = new Dictionary<string, Mutex>();
         static Mutex dictMutex = new Mutex();
 
@@ -103,7 +102,6 @@ namespace Gateway
 
             try
             {
-                // Grpc.Core — compatível com .NET Framework 4.7.2
                 var channel = new Channel("localhost", 50051, ChannelCredentials.Insecure);
 
                 var client = new PreProcessingService.PreProcessingServiceClient(channel);
@@ -143,23 +141,20 @@ namespace Gateway
                 {
                     Console.WriteLine($"[{partes[0]}] {partes[1]} | {partes[2]}.{partes[3]} = {partes[4]}");
 
-                    // Chamada RPC de pré-processamento
                     var (valid, normalizedValue, unit) = CallPreProcessing(mensagem);
 
                     if (!valid)
                     {
                         Console.WriteLine($"[RPC] Dado rejeitado: {mensagem}");
-                        return; // substitui o 'continue' — estamos numa lambda
+                        return;
                     }
 
-                    // Reconstruir mensagem com valor normalizado
                     string mensagemNormalizada = $"{partes[0]};{partes[1]};{partes[2]};{partes[3]};{normalizedValue}";
 
                     Console.WriteLine($"[RPC] Dado aceite: {mensagemNormalizada} {unit}");
 
                     SendToServer(mensagemNormalizada);
 
-                    // Validar tipo
                     if (!Parametros.Contains(partes[3]))
                     {
                         Console.WriteLine($"[AVISO] Tipo inválido: {partes[3]}");
@@ -196,7 +191,6 @@ namespace Gateway
 
             string path = $"Data/{tipo}.txt";
 
-            // Garante acesso sequencial ao ficheiro
             Mutex m = GetFileMutex(path);
             m.WaitOne();
             try
@@ -220,7 +214,6 @@ namespace Gateway
 
             try
             {
-                // Se ficheiro não existir, cria-o
                 if (!File.Exists(path))
                 {
                     Directory.CreateDirectory("Data");
@@ -235,11 +228,9 @@ namespace Gateway
 
                     if (parts[0] == sensorId)
                     {
-                        // Sensor já está ativo
                         if (parts[1] == "ATIVO")
                             return true;
 
-                        // Sensor existe mas está inativo
                         if (parts[1] == "INATIVO")
                         {
                             parts[1] = "ATIVO";
@@ -252,7 +243,6 @@ namespace Gateway
                     }
                 }
 
-                // Sensor não existe → adicionar nova linha
                 string novaLinha = $"{sensorId};ATIVO;{DateTime.Now:yyyy-MM-ddTHH:mm:ss}";
 
                 File.AppendAllText(path, novaLinha + Environment.NewLine);
@@ -349,7 +339,6 @@ namespace Gateway
                         SendResponse(stream, "OK");
                     }
 
-                    // HEARTBEAT
                     else if (message.StartsWith("HEARTBEAT"))
                     {
                         Console.WriteLine("Heartbeat de " + message);
@@ -359,8 +348,6 @@ namespace Gateway
                         SendResponse(stream, "HEARTBEAT_OK");
                     }
 
-                    // Dados ambientais
-                    // formato: timestamp;id;zona;tipo;valor
                     else if (message.Split(';').Length == 5 && message.StartsWith("2"))
                     {
                         string tipo = message.Split(';')[3];
@@ -380,7 +367,6 @@ namespace Gateway
                         SendResponse(stream, "DATA_RECEIVED");
                     }
 
-                    // Tipos de dados
                     else if (message.Contains(";"))
                     {
                         string[] tipos = message.Split(';');
@@ -395,7 +381,6 @@ namespace Gateway
                             SendResponse(stream, "TYPES_OK");
                     }
 
-                    // DISCONNECT
                     else if (message == "DISCONNECT")
                     {
                         SendResponse(stream, "BYE");
@@ -403,7 +388,6 @@ namespace Gateway
                         break;
                     }
 
-                    // Mensagem desconhecida
                     else
                     {
                         SendResponse(stream, "ERROR:UNKNOWN_COMMAND");
@@ -483,7 +467,6 @@ namespace Gateway
                             }
                         }
 
-                        // Reescreve o ficheiro apenas com as linhas que falharam
                         m.WaitOne();
                         try
                         {
@@ -531,7 +514,6 @@ namespace Gateway
                         string estado = parts[1];
                         string timestamp = parts[2];
 
-                        // Só verifica sensores ativos
                         if (estado != "ATIVO")
                             continue;
 

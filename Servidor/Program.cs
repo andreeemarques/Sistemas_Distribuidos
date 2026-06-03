@@ -14,7 +14,7 @@ using System.Threading;
 class Program
 {
     static Mutex mutex = new Mutex();
-    static AnalysisClient analysisClient = new AnalysisClient(); // NOVO
+    static AnalysisClient analysisClient = new AnalysisClient();
 
     static void Main()
     {
@@ -265,7 +265,6 @@ class Program
             mutex.WaitOne();
             try
             {
-               // File.AppendAllText("dados_recebidos.txt", header + Environment.NewLine);
                 Console.WriteLine("[DATA] Dado guardado!");
 
                 ProcessarFicheiro(header);
@@ -337,28 +336,23 @@ class Program
         Thread.Sleep(5000);
     }
 
-    // NOVO — Invocar serviço de análise via RPC
     static void AnalisarDados(string idSensor, string tipo, double valor)
     {
         try
         {
             var valores = new List<double> { valor };
 
-            // Análise estatística
             var stats = analysisClient.GetStatistics(idSensor, tipo, valores);
 
 
-            // Deteção de anomalias
             var anomalia = analysisClient.DetectAnomalies(idSensor, tipo, valores);
             if (anomalia != null && anomalia.AnomaliaDetetada)
                 Console.WriteLine($"[RPC] Poluição detetada no sensor {idSensor}: {anomalia.Descricao}");
 
-            // Previsão de riscos
             var risco = analysisClient.PredictHealthRisk(idSensor, new List<string> { tipo }, valores);
             if (risco != null)
                 Console.WriteLine($"[RPC] Risco saúde pública: {risco.NivelRisco} — {risco.Descricao}");
 
-            // Guardar na BD
             using (var db = new AppDbContext())
             {
                 var resultado = new ResultadoAnalise
