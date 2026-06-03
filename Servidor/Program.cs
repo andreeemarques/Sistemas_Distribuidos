@@ -267,7 +267,7 @@ class Program
             {
                 Console.WriteLine("[DATA] Dado guardado!");
 
-                ProcessarFicheiro(header);
+                ProcessarDados(header);
             }
             finally
             {
@@ -284,7 +284,7 @@ class Program
         client.Close();
     }
 
-    static void ProcessarFicheiro(string mensagem)
+    static void ProcessarDados(string mensagem)
     {
         try
         { 
@@ -296,32 +296,39 @@ class Program
                 string tipo = partes[3];
                 double valor = double.Parse(partes[4], System.Globalization.CultureInfo.InvariantCulture);
 
-                using (var db = new AppDbContext())
-                {
-                    var sensor = db.Sensores.Find(idSensor);
+                mutex.WaitOne();
 
-                    if (sensor == null)
+                try
+                {
+                    using (var db = new AppDbContext())
                     {
-                        sensor = new Sensor { IdSensor = idSensor };
-                        db.Sensores.Add(sensor);
+                        var sensor = db.Sensores.Find(idSensor);
+
+                        if (sensor == null)
+                        {
+                            sensor = new Sensor { IdSensor = idSensor };
+                            db.Sensores.Add(sensor);
+                        }
+
+                        db.Leituras.Add(new Leitura
+                        {
+                            IdSensor = idSensor,
+                            Tipo = tipo,
+                            Valor = valor,
+                            DataHora = DateTime.Now
+                        });
+
+                        db.SaveChanges();
                     }
 
-                    db.Leituras.Add(new Leitura
-                    {
-                        IdSensor = idSensor,
-                        Tipo = tipo,
-                        Valor = valor,
-                        DataHora = DateTime.Now
-                    });
+                    Console.WriteLine("[DATA] Inserido na BD!");
 
-                    db.SaveChanges();
+                    AnalisarDados(idSensor, tipo, valor);
+
+                    File.WriteAllText("dados_recebidos.txt", "");
                 }
+                finally { mutex.ReleaseMutex(); }
 
-                Console.WriteLine("[DATA] Inserido na BD!");
-
-                AnalisarDados(idSensor, tipo, valor); // NOVO
-
-                File.WriteAllText("dados_recebidos.txt", "");
             }
             catch (Exception e)
             {
@@ -360,7 +367,7 @@ class Program
                     IdSensor = idSensor,
                     Tipo = tipo,
                     DataHora = DateTime.Now,
-                    Valor = valor != null ? valor : 0,
+                    Valor = valor,
                     AnomaliaDetetada = anomalia != null && anomalia.AnomaliaDetetada,
                     DescricaoAnomalia = anomalia != null ? anomalia.Descricao : "Sem dados",
                     NivelRisco = risco != null ? risco.NivelRisco : "DESCONHECIDO",

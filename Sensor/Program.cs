@@ -10,17 +10,6 @@ namespace Sensor
 {
     internal class Program
     {
-        static readonly List<string> Parametros = new List<string>
-        {
-            "TEMP", "HUM", "RUIDO", "AR", "PM2.5", "PM10", "LUM"
-        };
-
-        static readonly List<string> Zonas = new List<string>
-        {
-            "ZONA_ESCOLAR", "ZONA_CENTRO", "ZONA_INDUSTRIAL",
-            "ZONA_RESIDENCIAL", "ZONA_PARQUE", "ZONA_AVENIDA"
-        };
-
         static int GerarValor(string parametro, Random rnd)
         {
             switch (parametro)
@@ -119,15 +108,15 @@ namespace Sensor
                 Thread.Sleep(config.Intervalo * 1000);
             }
         }
-
-
-        static volatile bool _videoRunning = false;
-        static volatile bool _canStream = false;
-
+        
         static void StreamVideo(string sensorId, string gatewayIp, int porta)
         {
             IPEndPoint destino = new IPEndPoint(IPAddress.Parse(gatewayIp), porta);
             UdpClient udp = new UdpClient();
+
+            bool _videoRunning = false;
+            bool _canStream = false;
+
 
             int retryDelay = 2000;
                 while (!_canStream)
@@ -184,7 +173,7 @@ namespace Sensor
 
         static string ReceiveResponse(UdpClient udp)
         {
-            udp.Client.ReceiveTimeout = 2000; // tempo de espera por resposta (2s)
+            udp.Client.ReceiveTimeout = 2000; 
 
             IPEndPoint remote = new IPEndPoint(IPAddress.Any, 0);
 
