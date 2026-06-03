@@ -3,10 +3,12 @@ using Servidor.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Remoting.Messaging;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 class Program
@@ -24,11 +26,130 @@ class Program
         t1.IsBackground = true;
         t1.Start();
 
+        Thread webThread = new Thread(StartWebServer);
+        webThread.IsBackground = true;
+        webThread.Start();
+
         while (true)
         {
             TcpClient client = server.AcceptTcpClient();
             Thread t = new Thread(() => HandleClient(client));
             t.Start();
+        }
+    }
+
+    static List<ResultadoAnalise> _resultados = new List<ResultadoAnalise>();
+    static Mutex resultadosMutex = new Mutex();
+
+    public static void AdicionarResultado(ResultadoAnalise r)
+    {
+        resultadosMutex.WaitOne();
+        {
+            _resultados.Insert(0, r);
+            if (_resultados.Count > 50) _resultados.RemoveAt(_resultados.Count - 1);
+        }
+        resultadosMutex.ReleaseMutex();
+    }
+
+    static void StartWebServer()
+    {
+        try
+        {
+            HttpListener listener = new HttpListener();
+
+            listener.Prefixes.Add("http://localhost:8080/");
+
+            listener.Start();
+
+            Console.WriteLine("[WEB] Dashboard online");
+            Console.WriteLine("http://localhost:8080/");
+
+            while (true)
+            {
+                HttpListenerContext context = listener.GetContext();
+
+                string path = context.Request.Url.AbsolutePath;
+
+                string basePath = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory)
+                                .Parent
+                                .Parent
+                                .FullName;
+
+                if (path == "/style.css")
+                {
+                    string cssPath = Path.Combine(basePath, "dashboard", "style.css");
+
+                    byte[] css = File.ReadAllBytes(cssPath);
+
+                    context.Response.ContentType = "text/css";
+
+                    context.Response.OutputStream.Write(css, 0, css.Length);
+
+                    context.Response.Close();
+
+                    continue;
+                }
+
+                if (path == "/api/resultados")
+                {
+                    resultadosMutex.WaitOne();
+                    try
+                    {
+                        var sb = new StringBuilder();
+                        sb.Append("[");
+                        for (int i = 0; i < _resultados.Count; i++)
+                        {
+                            var r = _resultados[i];
+                            sb.Append("{");
+                            sb.Append($"\"id\":{r.Id},");
+                            sb.Append($"\"dataHora\":\"{r.DataHora:yyyy-MM-ddTHH:mm:ss}\",");
+                            sb.Append($"\"idSensor\":\"{r.IdSensor}\",");
+                            sb.Append($"\"tipo\":\"{r.Tipo}\",");
+                            sb.Append($"\"valor\":{r.Valor.ToString(System.Globalization.CultureInfo.InvariantCulture)},");
+                            sb.Append($"\"anomaliaDetetada\":{r.AnomaliaDetetada.ToString().ToLower()},");
+                            sb.Append($"\"descricaoAnomalia\":\"{r.DescricaoAnomalia?.Replace("\"", "\\\"")}\",");
+                            sb.Append($"\"nivelRisco\":\"{r.NivelRisco}\",");
+                            sb.Append($"\"descricaoRisco\":\"{r.DescricaoRisco?.Replace("\"", "\\\"")}\",");
+                            sb.Append($"\"recomendacoes\":\"{r.Recomendacoes?.Replace("\"", "\\\"")}\"");
+                            sb.Append("}");
+                            if (i < _resultados.Count - 1) sb.Append(",");
+                        }
+                        sb.Append("]");
+
+                        byte[] bytes = Encoding.UTF8.GetBytes(sb.ToString());
+                        context.Response.ContentType = "application/json";
+                        context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+                        context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                    }
+                    finally
+                    {
+                        resultadosMutex.ReleaseMutex();
+                    }
+                    context.Response.Close();
+                    continue;
+                }
+
+                if (path == "/")
+                {
+                    string htmlPath = Path.Combine(basePath, "dashboard", "index.html");
+
+                    string html = File.ReadAllText(htmlPath);
+
+                    byte[] data = Encoding.UTF8.GetBytes(html);
+
+                    context.Response.ContentType = "text/html";
+
+                    context.Response.ContentLength64 = data.Length;
+
+                    context.Response.OutputStream.Write(data, 0, data.Length);
+                }
+
+                context.Response.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[WEB ERRO] " + ex.Message);
         }
     }
 
@@ -152,24 +273,23 @@ class Program
             // Guardar na BD
             using (var db = new AppDbContext())
             {
-                db.ResultadosAnalise.Add(new ResultadoAnalise
+                var resultado = new ResultadoAnalise
                 {
                     IdSensor = idSensor,
                     Tipo = tipo,
                     DataHora = DateTime.Now,
                     Valor = valor != null ? valor : 0,
-
-                    // Anomalia
                     AnomaliaDetetada = anomalia != null && anomalia.AnomaliaDetetada,
                     DescricaoAnomalia = anomalia != null ? anomalia.Descricao : "Sem dados",
-
-                    // Risco
                     NivelRisco = risco != null ? risco.NivelRisco : "DESCONHECIDO",
                     DescricaoRisco = risco != null ? risco.Descricao : "Sem dados",
                     Recomendacoes = risco != null ? string.Join("|", risco.Recomendacoes) : ""
-                });
+                };
 
+                db.ResultadosAnalise.Add(resultado);
                 db.SaveChanges();
+                AdicionarResultado(resultado);
+
                 Console.WriteLine("[DATA] Resultado de análise guardado na BD!");
             }
         }
