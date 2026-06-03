@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -51,104 +53,165 @@ namespace Sensor
 
         static void Main(string[] args)
         {
-            TcpClient client = new TcpClient("127.0.0.1", 5000);
-            var stream = client.GetStream();
-
-            DateTime ultimoHeartbeat = DateTime.Now;
-
-            Console.Write("ID do Sensor: ");
-            string id = Console.ReadLine();
-
-            Send(stream, $"HELLO;{id}");
-            string resposta = Receive(stream);
-
-            if (string.Compare(resposta, "OK") != 0)
+            if (args.Length > 0)
             {
-                Console.WriteLine("Erro na ligação: " + resposta);
+                string id = args[0];
+                var config = CsvConfig.LerPorId(id);
+
+                if (config == null)
+                {
+                    Console.WriteLine($"[ERRO] Sensor '{id}' não encontrado no CSV.");
+                    Console.ReadLine();
+                    return;
+                }
+
+                CorrerSensor(config);
                 return;
             }
 
-            Console.WriteLine("Ligado ao Gateway!");
+            var sensores = CsvConfig.LerTodos();
 
-            Random rnd = new Random();
+            if (sensores.Count == 0)
+            {
+                Console.WriteLine("[AVISO] Nenhum sensor encontrado no CSV.");
+                return;
+            }
+
+            Console.WriteLine($"[INIT] {sensores.Count} sensor(es) carregado(s).\n");
+
+            var threads = new List<Thread>();
+
+            foreach (var config in sensores)
+            {
+                var cfg = config;
+                var t = new Thread(() => CorrerSensor(cfg));
+                t.Name = cfg.Id;
+                t.IsBackground = true;
+                threads.Add(t);
+                t.Start();
+            }
+
+            Console.WriteLine("Pressiona [Enter] para parar todos os sensores.");
+            Console.ReadLine();
+        }
+
+        static void CorrerSensor(SensorConfig config)
+        {
+            var rnd = new Random();
+
+            var pub = new Publisher();
+
+            Console.WriteLine($"[{config.Id}] Iniciado | Zona: {config.Zona} | " +
+                              $"Parâmetros: {string.Join(", ", config.Parametros)}");
 
             while (true)
             {
-                if ((DateTime.Now - ultimoHeartbeat).TotalMinutes >= 2)
+                foreach (var parametro in config.Parametros)
                 {
-                    Send(stream, $"HEARTBEAT;{id}");
-                    Console.WriteLine("Heartbeat -> " + Receive(stream));
-
-                    ultimoHeartbeat = DateTime.Now;
+                    int valor = GerarValor(parametro, rnd);
+                    pub.Publicar(config.Id, config.Zona, parametro, valor);
                 }
-                else
+
+                Thread.Sleep(config.Intervalo * 1000);
+            }
+        }
+
+
+        // VIDEO
+
+        static volatile bool _videoRunning = false;
+        static volatile bool _canStream = false;
+
+        static void StreamVideo(string sensorId, string gatewayIp, int porta)
+        {
+            IPEndPoint destino = new IPEndPoint(IPAddress.Parse(gatewayIp), porta);
+            UdpClient udp = new UdpClient();
+
+            int retryDelay = 2000;
+                while (!_canStream)
                 {
-                    int numParametros = rnd.Next(2, Parametros.Count + 1);
+                    string msg = $"VIDEO_HELLO;{sensorId}";
+                    byte[] data = Encoding.UTF8.GetBytes(msg);
+                    udp.Send(data, data.Length, destino);
 
-                    List<string> parametrosSelecionados = new List<string>(Parametros);
-                    for (int i = parametrosSelecionados.Count - 1; i > 0; i--)
+                    string response = ReceiveResponse(udp);
+
+                    if (response != null && response.StartsWith("VIDEO_OK"))
                     {
-                        int j = rnd.Next(i + 1);
-                        (parametrosSelecionados[i], parametrosSelecionados[j]) =
-                            (parametrosSelecionados[j], parametrosSelecionados[i]);
+                        Console.WriteLine("[VIDEO] Acesso autorizado");
+                        _canStream = true;
+                        break;
                     }
-                    parametrosSelecionados = parametrosSelecionados.GetRange(0, numParametros);
-
-                    string tiposMsg = string.Join(";", parametrosSelecionados);
-                    Send(stream, tiposMsg);
-                    string conf_tipos = Receive(stream);
-
-                    if (string.Compare(conf_tipos, "TYPES_OK") == 0)
+                    else if (response != null && response.StartsWith("VIDEO_WAIT"))
                     {
-                        Console.WriteLine("Tipos registados -> " + conf_tipos);
-                        Console.WriteLine($"Parâmetros activos ({numParametros}): {tiposMsg}");
+                        Console.WriteLine("[VIDEO] Em espera...");
+                        Thread.Sleep(retryDelay);
                     }
                     else
                     {
-                        Console.WriteLine($"Erro:{conf_tipos}");
-                        break;
-                    }
-
-                    string zona = Zonas[rnd.Next(Zonas.Count)];
-                    string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-
-                    foreach (string parametro in parametrosSelecionados)
-                    {
-                        int valor = GerarValor(parametro, rnd);
-                        string msg = $"{timestamp};{id};{zona};{parametro};{valor}";
-
-                        Send(stream, msg);
-                        string confirmacao = Receive(stream);
-
-                        if (string.Compare(confirmacao, "DATA_RECEIVED") == 0)
-                            Console.WriteLine($"{parametro}={valor} - DATA_RECEIVED");
-                        else
-                        {
-                            Console.WriteLine($"Erro:{confirmacao} - {parametro}");
-                            break;
-                        }
+                        Console.WriteLine("[VIDEO] Erro: " + response);
                     }
                 }
 
-                Thread.Sleep(60000);
+                _videoRunning = true;
+                int frameIndex = 0;
+                Random rnd = new Random();
+
+                while (_videoRunning && frameIndex < 100)
+                {
+                    try
+                    {
+                        SendFrame(udp, destino, sensorId, frameIndex, rnd);
+                        frameIndex++;
+
+                        Thread.Sleep(33);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[VIDEO] Erro: {ex.Message}");
+                        _videoRunning = false;
+                    }
+                }
+
+                byte[] end = Encoding.UTF8.GetBytes($"VIDEO_END;{sensorId}");
+                udp.Send(end, end.Length, destino);
+
+                udp.Close();
+                Console.WriteLine("[VIDEO] Stream terminada.");
+        }
+
+        static string ReceiveResponse(UdpClient udp)
+        {
+            udp.Client.ReceiveTimeout = 2000; // tempo de espera por resposta (2s)
+
+            IPEndPoint remote = new IPEndPoint(IPAddress.Any, 0);
+
+            try
+            {
+                byte[] data = udp.Receive(ref remote);
+                return Encoding.UTF8.GetString(data);
             }
-
-            Send(stream, "DISCONNECT");
-            Console.WriteLine(Receive(stream));
-            client.Close();
+            catch
+            {
+                return null;
+            }
         }
 
-        static void Send(NetworkStream stream, string msg)
+        static void SendFrame(UdpClient udp, IPEndPoint destino, string sensorId, int frameIndex, Random rnd)
         {
-            byte[] data = Encoding.UTF8.GetBytes(msg);
-            stream.Write(data, 0, data.Length);
-        }
+            byte[] frameData = new byte[1024];
+            rnd.NextBytes(frameData);
 
-        static string Receive(NetworkStream stream)
-        {
-            byte[] buffer = new byte[1024];
-            int bytesRead = stream.Read(buffer, 0, buffer.Length);
-            return Encoding.UTF8.GetString(buffer, 0, bytesRead);
+            string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff");
+            string header = $"FRAME;{sensorId};{frameIndex};{timestamp};{frameData.Length}\n";
+            byte[] headerBytes = Encoding.UTF8.GetBytes(header);
+
+            // header e frame 
+            byte[] pacote = new byte[headerBytes.Length + frameData.Length];
+            Buffer.BlockCopy(headerBytes, 0, pacote, 0, headerBytes.Length);
+            Buffer.BlockCopy(frameData, 0, pacote, headerBytes.Length, frameData.Length);
+
+            udp.Send(pacote, pacote.Length, destino);
         }
     }
 }

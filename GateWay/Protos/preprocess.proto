@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package preprocessing;
+
+service PreProcessingService {
+  rpc ProcessData (SensorData) returns (ProcessedData);
+}
+
+message SensorData {
+  string timestamp = 1;
+  string sensor_id = 2;
+  string zone      = 3;
+  string type      = 4;
+  string value     = 5;
+}
+
+message ProcessedData {
+  bool   valid            = 1;
+  string normalized_value = 2;
+  string unit             = 3;
+  string error_message    = 4;
+}
