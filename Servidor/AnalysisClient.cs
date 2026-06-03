@@ -1,4 +1,5 @@
 ﻿using AnalysisService;
+using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using System;
 using System.Collections.Generic;
@@ -23,9 +24,8 @@ public class AnalysisClient
                 Tipo = tipo,
             };
             request.Valores.AddRange(valores);
-
             var response = _client.GetStatistics(request);
-            Console.WriteLine($"[RPC] Estatísticas | Média: {response.Media:F2} | Min: {response.Minimo} | Max: {response.Maximo}");
+            Console.WriteLine($"[RPC] Estatísticas | Valor: {response.Minimo}");
             return response;
         }
         catch (Exception e)

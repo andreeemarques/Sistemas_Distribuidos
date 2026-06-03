@@ -16,6 +16,10 @@ message StatisticsRequest {
   repeated double valores = 3;
 }
 
+message StatisticsResponse {
+  double valor = 1;
+}
+
 message AnomalyRequest {
   string sensor_id = 1;
   string tipo = 2;

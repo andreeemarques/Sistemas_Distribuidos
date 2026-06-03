@@ -108,7 +108,16 @@
     <Compile Include="Migrations\202605291129295_InitialCreate.Designer.cs">
       <DependentUpon>202605291129295_InitialCreate.cs</DependentUpon>
     </Compile>
+    <Compile Include="Migrations\202606031443507_Secondmigration.cs" />
+    <Compile Include="Migrations\202606031443507_Secondmigration.Designer.cs">
+      <DependentUpon>202606031443507_Secondmigration.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Migrations\202606031517104_ThirdMigration.cs" />
+    <Compile Include="Migrations\202606031517104_ThirdMigration.Designer.cs">
+      <DependentUpon>202606031517104_ThirdMigration.cs</DependentUpon>
+    </Compile>
     <Compile Include="Migrations\Configuration.cs" />
+    <Compile Include="Models\Analise.cs" />
     <Compile Include="Models\Leitura.cs" />
     <Compile Include="Models\Sensor.cs" />
     <Compile Include="Program.cs" />
@@ -128,6 +137,12 @@
   <ItemGroup>
     <EmbeddedResource Include="Migrations\202605291129295_InitialCreate.resx">
       <DependentUpon>202605291129295_InitialCreate.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Migrations\202606031443507_Secondmigration.resx">
+      <DependentUpon>202606031443507_Secondmigration.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Migrations\202606031517104_ThirdMigration.resx">
+      <DependentUpon>202606031517104_ThirdMigration.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

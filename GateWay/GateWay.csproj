@@ -109,10 +109,16 @@
     <None Include="App.config" />
     <None Include="gateways.csv" />
     <None Include="packages.config" />
+    <None Include="preprocess.proto" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
     <Protobuf Include="Protos\preprocess.proto" GrpcServices="Client" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="preprocess_pb2.py" />
+    <Content Include="preprocess_pb2_grpc.py" />
+    <Content Include="preprocess_server.py" />
   </ItemGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
