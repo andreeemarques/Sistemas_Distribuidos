@@ -49,6 +49,10 @@ namespace Gateway
 
         static void Main(string[] args)
         {
+            Thread videoThread = new Thread(() => ReceiveVideo(5000));
+            videoThread.IsBackground = true;
+            videoThread.Start();
+
             if (args.Length > 0)
             {
                 string id = args[0];

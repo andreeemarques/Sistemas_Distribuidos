@@ -144,15 +144,6 @@
     <Content Include="AnalysisService\analysis_server.py" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Migrations\202605291129295_InitialCreate.resx">
-      <DependentUpon>202605291129295_InitialCreate.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Migrations\202606031443507_Secondmigration.resx">
-      <DependentUpon>202606031443507_Secondmigration.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Migrations\202606031517104_ThirdMigration.resx">
-      <DependentUpon>202606031517104_ThirdMigration.cs</DependentUpon>
-    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <Content Include="dashboard\index.html" />

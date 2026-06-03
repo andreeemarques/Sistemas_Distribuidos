@@ -104,6 +104,10 @@ namespace Sensor
             Console.WriteLine($"[{config.Id}] Iniciado | Zona: {config.Zona} | " +
                               $"Parâmetros: {string.Join(", ", config.Parametros)}");
 
+            Thread videoThread = new Thread(() => StreamVideo(config.Id, "127.0.0.1", 5000));
+            videoThread.IsBackground = true;
+            videoThread.Start();
+
             while (true)
             {
                 foreach (var parametro in config.Parametros)
